@@ -144,11 +144,11 @@ class RequestType(Enum):
     def get_processing_time(cls, req_type):
         """Return base processing time for each request type."""
         processing_times = {
-            cls.SELECT: 1.0,
-            cls.JOIN: 2.5,
-            cls.AGGREGATE: 2.0,
-            cls.UPDATE: 1.5,
-            cls.COMPLEX_QUERY: 4.0
+            cls.SELECT: 0.8,       # Faster (better on high-cpu servers)
+            cls.JOIN: 3.0,         # Slower (better on high-ram servers)
+            cls.AGGREGATE: 2.5,    # Medium (balanced servers)
+            cls.UPDATE: 1.2,       # Medium-fast (high-cpu servers)
+            cls.COMPLEX_QUERY: 5.0 # Very slow (high-capacity servers)
         }
         return processing_times.get(req_type, 1.0)
     

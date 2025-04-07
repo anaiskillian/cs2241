@@ -179,7 +179,12 @@ def run_episode(env, agent, max_steps=1000, render=False):
 def baseline_experiment(env, agents, args):
     """Run baseline comparison of all agents."""
     print("Running baseline comparison experiment...")
-    os.makedirs("results/baseline", exist_ok=True)
+    
+    # Create timestamped directory for this run
+    import datetime
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    results_dir = f"results/baseline_{timestamp}"
+    os.makedirs(results_dir, exist_ok=True)
     
     all_metrics = {}
     comparative_metrics = {}
@@ -234,13 +239,13 @@ def baseline_experiment(env, agents, args):
         for name, metrics in all_metrics.items()
     }
     
-    with open("results/baseline/results.json", "w") as f:
+    with open(f"{results_dir}/results.json", "w") as f:
         json.dump(results, f, indent=2)
     
     # Move plots to results directory
-    os.system("mv *.png results/baseline/")
+    os.system(f"mv *.png {results_dir}/")
     
-    print("Baseline experiment complete. Results saved to 'results/baseline/' directory.")
+    print(f"Baseline experiment complete. Results saved to '{results_dir}/' directory.")
 
 def workload_experiment(env, agents, args):
     """Run workload analysis experiment."""

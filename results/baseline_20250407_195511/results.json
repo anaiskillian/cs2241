@@ -1,0 +1,46 @@
+{
+  "Round Robin": {
+    "avg_metrics": {
+      "avg_latency": 1.4487890018746248,
+      "avg_throughput": 5.046096031418338,
+      "avg_success_rate": 0.9711866132715465,
+      "avg_server_util": 0.4978520833333333,
+      "std_latency": 0.5783504925512183,
+      "tail_latency_95": 2.00910511363636
+    },
+    "fairness": 0.8772939740969858
+  },
+  "Random": {
+    "avg_metrics": {
+      "avg_latency": 1.422376292541986,
+      "avg_throughput": 4.954339103974108,
+      "avg_success_rate": 0.9491128485750466,
+      "avg_server_util": 0.47248541666666666,
+      "std_latency": 0.5672821227124054,
+      "tail_latency_95": 1.9399034141958638
+    },
+    "fairness": 0.8841901374028729
+  },
+  "Least Loaded": {
+    "avg_metrics": {
+      "avg_latency": 1.4423578959796268,
+      "avg_throughput": 5.218461122945098,
+      "avg_success_rate": 1.0,
+      "avg_server_util": 0.47338125000000003,
+      "std_latency": 0.5606910214707594,
+      "tail_latency_95": 1.9570079575596782
+    },
+    "fairness": 0.9946972040523644
+  },
+  "MAB (UCB)": {
+    "avg_metrics": {
+      "avg_latency": 1.4150688647089522,
+      "avg_throughput": 5.0055615440882155,
+      "avg_success_rate": 0.9487039926656742,
+      "avg_server_util": 0.4326770833333333,
+      "std_latency": 0.5549330663462185,
+      "tail_latency_95": 1.9291060688901005
+    },
+    "fairness": 0.9807106403984398
+  }
+}

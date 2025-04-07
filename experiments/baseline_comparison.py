@@ -81,9 +81,9 @@ def main(args):
     # Configure environment
     server_configs = [
         {"cpu_speed": 1.0, "ram_size": 16, "processing_capacity": 8},
-        {"cpu_speed": 1.2, "ram_size": 32, "processing_capacity": 10},
-        {"cpu_speed": 0.8, "ram_size": 8, "processing_capacity": 6},
-        {"cpu_speed": 1.5, "ram_size": 64, "processing_capacity": 12}
+        {"cpu_speed": 1.5, "ram_size": 32, "processing_capacity": 12},  # Strong server
+        {"cpu_speed": 0.6, "ram_size": 8, "processing_capacity": 4},    # Weak server
+        {"cpu_speed": 2.0, "ram_size": 64, "processing_capacity": 16}   # Very strong server
     ]
     
     env = ServerCluster(
