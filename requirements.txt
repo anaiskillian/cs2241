@@ -1,0 +1,7 @@
+# requirements.txt
+numpy>=1.19.0
+matplotlib>=3.3.0
+torch>=1.8.0
+gym>=0.17.0
+tqdm>=4.46.0
+pandas>=1.0.0
