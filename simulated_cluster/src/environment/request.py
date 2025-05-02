@@ -3,6 +3,7 @@ from enum import Enum, auto
 from dataclasses import dataclass
 
 class RequestType(Enum):
+    "DEPRECATED. DONT USE DIRECTLY"
     """Enum representing different types of requests with varying resource requirements."""
     SELECT = auto()        # Simple query
     JOIN = auto()          # More complex join operation

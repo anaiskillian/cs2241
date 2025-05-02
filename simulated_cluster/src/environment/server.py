@@ -1,3 +1,127 @@
+# src/environment/server.py
+import numpy as np
+from typing import Dict, List, Tuple
+
+class Server:
+    """
+    Real-mode-only Server: only tracks real requests, no local CPU/RAM simulation.
+    """
+
+    def __init__(self, server_id: int, **kwargs):
+        self.server_id = server_id
+        # Real host/proxy support
+        self.host = None
+        self.async_pool = None
+        self.real_latency_buffer = []
+        self.real_mode = False
+        if "host" in kwargs:
+            self.host = kwargs["host"]
+            self.real_mode = True
+
+    def can_accept_request(self) -> bool:
+        """Always accept request in real mode (or could add real limits)."""
+        return True
+
+    def add_request(self, request_id: str, request_obj, processing_time: float) -> bool:
+        """
+        Always run the request using send_query_to_host (real mode only).
+        """
+        import asyncio
+        from src.remote_utils import send_query_to_host
+
+        req_type = request_obj.request_type.name
+        query = "SELECT 1"  # TODO: map req_type to actual query
+        asyncio.create_task(
+            send_query_to_host(
+                self.async_pool, query, self.real_latency_buffer, request_id
+            )
+        )
+        return True
+
+    def step(self, time_delta: float):
+        """
+        Only return completed real requests.
+        """
+        completed = self.real_latency_buffer.copy()
+        self.real_latency_buffer.clear()
+        return completed
+
+    def get_state(self) -> dict:
+        """Return minimal state: server_id only."""
+        return {"server_id": self.server_id}
+
+    def reset(self):
+        """Clear real-mode buffers only."""
+        self.real_latency_buffer.clear()
+
+
+# src/environment/request.py
+import uuid
+from enum import Enum, auto
+from dataclasses import dataclass
+
+class RequestType(Enum):
+    """Enum representing different types of requests with varying resource requirements."""
+    SELECT = auto()        # Simple query
+    JOIN = auto()          # More complex join operation
+    AGGREGATE = auto()     # Aggregate operations (SUM, AVG, etc)
+    UPDATE = auto()        # Data modification
+    COMPLEX_QUERY = auto() # Complex analytics query
+    
+    @classmethod
+    def get_processing_time(cls, req_type):
+        """Return base processing time for each request type."""
+        processing_times = {
+            cls.SELECT: 0.8,       # Faster (better on high-cpu servers)
+            cls.JOIN: 3.0,         # Slower (better on high-ram servers)
+            cls.AGGREGATE: 2.5,    # Medium (balanced servers)
+            cls.UPDATE: 1.2,       # Medium-fast (high-cpu servers)
+            cls.COMPLEX_QUERY: 5.0 # Very slow (high-capacity servers)
+        }
+        return processing_times.get(req_type, 1.0)
+    
+    @classmethod
+    def get_ram_requirement(cls, req_type):
+        """Return RAM requirement (as a percentage of total) for each request type."""
+        ram_requirements = {
+            cls.SELECT: 0.05,
+            cls.JOIN: 0.15,
+            cls.AGGREGATE: 0.1,
+            cls.UPDATE: 0.05,
+            cls.COMPLEX_QUERY: 0.25
+        }
+        return ram_requirements.get(req_type, 0.05)
+
+@dataclass
+class Request:
+    """Class representing a request with its properties."""
+    request_id: str
+    request_type: RequestType
+    arrival_time: float
+    size: float = 1.0  # Size multiplier affecting processing time
+    
+    @classmethod
+    def create(cls, request_type, arrival_time, size=1.0):
+        """Factory method to create a new request with a unique ID."""
+        return cls(
+            request_id=str(uuid.uuid4()),
+            request_type=request_type,
+            arrival_time=arrival_time,
+            size=size
+        )
+    
+    @property
+    def base_processing_time(self):
+        """Get the base processing time for this request type."""
+        return RequestType.get_processing_time(self.request_type) * self.size
+    
+    @property
+    def ram_requirement(self):
+        """Get the RAM requirement for this request type."""
+        return RequestType.get_ram_requirement(self.request_type) * self.size
+
+
+# src/environment/cluster.py
 import numpy as np
 from typing import List, Dict, Tuple, Optional
 import gym
