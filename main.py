@@ -185,6 +185,8 @@ def baseline_experiment(env, agents, args):
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     results_dir = f"results/baseline_{timestamp}"
     os.makedirs(results_dir, exist_ok=True)
+
+    save_command_info(args, results_dir)
     
     all_metrics = {}
     comparative_metrics = {}
@@ -250,7 +252,14 @@ def baseline_experiment(env, agents, args):
 def workload_experiment(env, agents, args):
     """Run workload analysis experiment."""
     print(f"Running workload analysis experiment...")
-    os.makedirs("results/workload", exist_ok=True)
+    
+    # Create timestamped directory for this run
+    import datetime
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    results_dir = f"results/workload_{timestamp}"
+    os.makedirs(results_dir, exist_ok=True)
+
+    save_command_info(args, results_dir)
     
     # Initialize workload generator
     workload_gen = WorkloadGenerator(seed=args.seed)
@@ -336,18 +345,27 @@ def workload_experiment(env, agents, args):
             for agent_name, metrics in results.items()
         }
     
-    with open("results/workload/summary.json", "w") as f:
+    with open(f"{results_dir}/summary.json", "w") as f:
         json.dump(summary, f, indent=2)
     
     # Move plots to results directory
-    os.system("mv *.png results/workload/")
+    os.system(f"mv *.png {results_dir}/")
     
-    print("Workload analysis complete. Results saved to 'results/workload/' directory.")
+    print(f"Workload analysis complete. Results saved to '{results_dir}/' directory.")
+
 
 def hyperparameter_experiment(env, args):
     """Run hyperparameter tuning experiment."""
     print("Running hyperparameter tuning experiment...")
-    os.makedirs("results/hyperparameter", exist_ok=True)
+    
+    # Create timestamped directory for this run
+    import datetime
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    results_dir = f"results/hyperparameter_{timestamp}"
+    os.makedirs(results_dir, exist_ok=True)
+    
+    # Save command line information
+    save_command_info(args, results_dir)
     
     # Define hyperparameter ranges to test
     hyperparams = {
@@ -457,7 +475,15 @@ def hyperparameter_experiment(env, args):
 def ppo_experiment(env, agents, args):
     """Run PPO comparison experiment."""
     print("Running PPO comparison experiment...")
-    os.makedirs("results/ppo", exist_ok=True)
+    
+    # Create timestamped directory for this run
+    import datetime
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    results_dir = f"results/ppo_{timestamp}"
+    os.makedirs(results_dir, exist_ok=True)
+    
+    # Save command line information
+    save_command_info(args, results_dir)
     
     # Ensure we have the PPO agent
     if "PPO" not in agents:
@@ -579,6 +605,94 @@ def ppo_experiment(env, agents, args):
     
     print("PPO experiment complete. Results saved to 'results/ppo/' directory.")
 
+def save_command_info(args, results_dir, agents=None):
+    """
+    Save the command line parameters, agent configurations, and MAB_CONFIG used to run the experiment.
+    
+    Args:
+        args: Parsed command line arguments
+        results_dir: Directory where results are saved
+        agents: Dictionary of agent instances (optional)
+    """
+    import sys
+    import os
+    from src.config import MAB_CONFIG
+    
+    # Get the original command
+    command = f"PYTHONPATH=. python {' '.join(sys.argv)}"
+    
+    # Convert args to dictionary
+    args_dict = vars(args)
+    
+    # Create a dictionary with command and arguments
+    command_info = {
+        "command": command,
+        "arguments": args_dict,
+        "mab_config": MAB_CONFIG  # Include MAB_CONFIG from config.py
+    }
+    
+    # If MAB agents are provided, capture their configurations
+    if agents:
+        agent_configs = {}
+        for name, agent in agents.items():
+            if "MAB" in name and hasattr(agent, "strategy"):
+                # Extract MAB agent configuration
+                config = {
+                    "strategy": agent.strategy.name,
+                    "num_servers": agent.num_servers,
+                }
+                
+                # Add strategy-specific parameters
+                if hasattr(agent, "epsilon"):
+                    config["epsilon"] = agent.epsilon
+                if hasattr(agent, "alpha"):
+                    config["alpha"] = agent.alpha
+                if hasattr(agent, "ucb_c"):
+                    config["ucb_c"] = agent.ucb_c
+                if hasattr(agent, "throughput_weight"):
+                    config["throughput_weight"] = agent.throughput_weight
+                
+                agent_configs[name] = config
+                
+        # Add agent configurations to command info
+        if agent_configs:
+            command_info["agent_configs"] = agent_configs
+    
+    # Save to JSON
+    import json
+    with open(os.path.join(results_dir, "command_info.json"), "w") as f:
+        json.dump(command_info, f, indent=2)
+    
+    # Also save as plain text for easy reading
+    with open(os.path.join(results_dir, "command.txt"), "w") as f:
+        f.write(f"Command: {command}\n\n")
+        f.write("Arguments:\n")
+        for arg, value in args_dict.items():
+            f.write(f"  --{arg}: {value}\n")
+        
+        # Add MAB_CONFIG to plain text file
+        f.write("\nMAB_CONFIG from config.py:\n")
+        for strategy, params in MAB_CONFIG.items():
+            f.write(f"  {strategy}:\n")
+            for param, value in params.items():
+                f.write(f"    {param}: {value}\n")
+        
+        # Add agent configurations to plain text file too
+        if agents and any("MAB" in name for name in agents):
+            f.write("\nMAB Agent Configurations:\n")
+            for name, agent in agents.items():
+                if "MAB" in name and hasattr(agent, "strategy"):
+                    f.write(f"  {name}:\n")
+                    f.write(f"    Strategy: {agent.strategy.name}\n")
+                    if hasattr(agent, "epsilon"):
+                        f.write(f"    Epsilon: {agent.epsilon}\n")
+                    if hasattr(agent, "alpha"):
+                        f.write(f"    Alpha: {agent.alpha}\n")
+                    if hasattr(agent, "ucb_c"):
+                        f.write(f"    UCB exploration coefficient: {agent.ucb_c}\n")
+                    if hasattr(agent, "throughput_weight"):
+                        f.write(f"    Throughput weight: {agent.throughput_weight}\n")
+                        
 def main():
     # Parse command line arguments
     args = parse_args()
@@ -606,6 +720,8 @@ def main():
         ppo_experiment(env, agents, args)
     else:
         print(f"Unknown experiment type: {args.experiment}")
+
+
 
 if __name__ == "__main__":
     main()

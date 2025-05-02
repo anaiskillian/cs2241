@@ -1,0 +1,25 @@
+Command: PYTHONPATH=. python main.py --experiment baseline --episodes 5 --steps 1000
+
+Arguments:
+  --experiment: baseline
+  --episodes: 5
+  --steps: 1000
+  --seed: 42
+  --servers: 4
+  --history: 5
+  --mab_strategy: ucb
+  --workload_type: all
+  --workload_size: 500
+
+MAB_CONFIG from config.py:
+  epsilon_greedy:
+    epsilon: 0.05
+    alpha: 0.2
+    throughput_weight: 0.6
+  ucb:
+    ucb_c: 0.8
+    alpha: 0.2
+    throughput_weight: 0.7
+  thompson:
+    alpha: 0.2
+    throughput_weight: 0.6

@@ -40,18 +40,20 @@ SERVER_CONFIGS = [
 ]
 
 # Multi-Armed Bandit agent default settings
-# Optimized settings to make MAB perform better
 MAB_CONFIG = {
     "epsilon_greedy": {
-        "epsilon": 0.05,  # Reduced epsilon for less exploration
-        "alpha": 0.2      # Increased alpha for faster learning
+        "epsilon": 0.05,     # Reduced epsilon for less exploration
+        "alpha": 0.2,        # Increased alpha for faster learning
+        "throughput_weight": 0.6  # Weight throughput more than latency
     },
     "ucb": {
-        "ucb_c": 1.0,     # Reduced exploration coefficient for better exploitation
-        "alpha": 0.2      # Increased alpha for faster learning
+        "ucb_c": 0.8,        # Reduced exploration coefficient
+        "alpha": 0.2,        # Increased alpha for faster learning
+        "throughput_weight": 0.7  # Higher weight on throughput for UCB
     },
     "thompson": {
-        "alpha": 0.2      # Increased alpha for faster learning
+        "alpha": 0.2,        # Increased alpha for faster learning
+        "throughput_weight": 0.6  # Weight throughput more than latency
     }
 }
 
