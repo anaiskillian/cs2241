@@ -5,3 +5,5 @@ torch>=1.8.0
 gym>=0.17.0
 tqdm>=4.46.0
 pandas>=1.0.0
+asyncpg
+scipy
