@@ -2,6 +2,7 @@
 import numpy as np
 from enum import Enum, auto
 from .base_agent import BaseAgent
+from ..environment.request import QueryType
 
 class BanditStrategy(Enum):
     """Enum for different multi-armed bandit strategies."""
@@ -22,7 +23,7 @@ class MultiArmedBanditAgent(BaseAgent):
         epsilon=0.1,
         alpha=0.1,
         ucb_c=2.0,
-        num_request_types=5,
+        num_request_types=len(QueryType),
         **kwargs
     ):
         """
@@ -187,12 +188,11 @@ class ContextualBanditAgent(BaseAgent):
         self.input_dim = num_request_types + 2
         # one linear model per server
         self.models = [LinearModel(self.input_dim, lr) for _ in range(num_servers)]
-
     def _build_context(self, observation, server_idx):
         # Extract request type one-hot and resource utilizations
+        cpu_util = observation["server_utils"][server_idx, 0]
+        ram_util = observation["server_utils"][server_idx, 1]
         request_type_onehot = observation["request_type"]
-        cpu_util = observation["cpu_util"][server_idx]
-        ram_util = observation["ram_util"][server_idx]
         return np.concatenate([request_type_onehot, [cpu_util, ram_util]])
 
     def select_action(self, observation):

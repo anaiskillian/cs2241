@@ -8,7 +8,7 @@ Key features
     result comes back and is fed into the reward signal.
 
 2.  *Extensible query generation* - pluggable `query_generator`.  The default
-    simply yields `"SELECT 1;"` with type `QueryType.SIMPLE_SELECT`, but you
+    simply yields `"SELECT 1;"` with type `QueryType.PING`, but you
     can swap in the rich generator produced by `generate_select_queries.py`
     at any time.
 
@@ -102,18 +102,17 @@ class RealServerCluster(gym.Env):
         db_cfg = dict(db_cfg)
         db_cfg.setdefault("min_size", pool_size)
         db_cfg.setdefault("max_size", pool_size)
-        self.pools = self._loop.run_until_complete(
-            asyncio.gather(
-                *[self._build_pool(h, db_cfg) for h in hosts], loop=self._loop
-            )
-        )
+
+        coros = [self._build_pool(h, db_cfg) for h in hosts]
+        self.pools = self._loop.run_until_complete(asyncio.gather(*coros))
+
         self.num_hosts = len(self.pools)
 
         # --------------------- query generation --------------------------
         if query_generator is None:
 
             def _default_generator() -> Tuple[str, QueryType]:
-                return "SELECT 1;", QueryType.SIMPLE_SELECT
+                return "SELECT 1;", QueryType.PING
 
             self.query_generator = _default_generator
         else:
@@ -160,12 +159,8 @@ class RealServerCluster(gym.Env):
                     shape=(history_length,),
                     dtype=np.int32,
                 ),
-                "request_type": spaces.Box(
-                    low=0,
-                    high=len(QueryType) - 1,
-                    shape=(),
-                    dtype=np.int32,
-                ),
+                # one-hot encoding of the QueryType
+                "request_type": spaces.MultiBinary(len(QueryType)),
             }
         )
 
@@ -219,6 +214,8 @@ class RealServerCluster(gym.Env):
 
         # 4. Harvest any completed latencies since last step
         latencies_this_step = self._drain_latency_queue()
+        # count the number of latencies that were above 1 minute
+        cnt = sum(1 for latency in latencies_this_step if latency > 60.0)
 
         # 5. Dummy-update util numbers (replace with real data feed later)
         self._jitter_utils()
@@ -227,6 +224,7 @@ class RealServerCluster(gym.Env):
         reward = (
             1.0 / (1.0 + np.mean(latencies_this_step)) if latencies_this_step else 0.01
         )
+        reward -= cnt * 2  # penalize for long latencies
 
         # 7. Enqueue the *next* request so there is always something waiting
         self._enqueue_new_request()
@@ -235,6 +233,11 @@ class RealServerCluster(gym.Env):
             "avg_latency": self.average_latency,
             "completed": self.completed_cnt,
             "steps": self.steps_taken,
+            "success_rate": (
+                cnt / len(latencies_this_step) if latencies_this_step else 1.0
+            ),
+            "throughput": self.completed_cnt / self.steps_taken,
+            "latencies": latencies_this_step,
         }
         return self._get_obs(), reward, done, info
 
@@ -267,17 +270,20 @@ class RealServerCluster(gym.Env):
 
     # -- observation, util, render ---------------------------------------
     def _get_obs(self) -> Dict:
-        # current request type → scalar, not one-hot (simpler for agents)
+        # one-hot encode current request type
+        num_types = len(QueryType)
+        one_hot = np.zeros(num_types, dtype=np.int32)
         if self.pending_requests:
-            rt_val = int(self.pending_requests[0].query_type)
-        else:  # should not happen
-            rt_val = int(QueryType.SIMPLE_SELECT)
+            idx = int(self.pending_requests[0].query_type)
+        else:
+            idx = 0
+        one_hot[idx] = 1
 
         return {
             "server_utils": self.server_utils.copy(),
             "latency_history": np.array(self.latency_hist, dtype=np.float32),
             "decision_history": np.array(self.decision_hist, dtype=np.int32),
-            "request_type": np.array(rt_val, dtype=np.int32),
+            "request_type": one_hot,
         }
 
     def _jitter_utils(self):

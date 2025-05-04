@@ -23,13 +23,15 @@ async def send_query_to_host(
     This helper never raises, the environment treats failures as really high latency.
     """
     try:
+        t0 = time.perf_counter()
         async with pool.acquire() as conn:
-            t0 = time.perf_counter()
             await conn.execute(sql)
             latency = time.perf_counter() - t0
+
     except Exception as exc:
-        print(f"[WARN] {request_id}: query failed – {exc}")
+        print(f"[WARN] {request_id}: query failed - {exc}")
         latency = 600.0  # 600 s penalty
     finally:
+        # print(f"[INFO] {request_id}: query done - {latency:.2f} s")
         # Queue is *thread-safe* for asyncio tasks in the same loop.
         await latency_queue.put((request_id, latency))

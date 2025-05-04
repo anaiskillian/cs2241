@@ -4,10 +4,11 @@ import numpy as np
 import pandas as pd
 import math
 import data_gen_utils
+import os
+import random
 
-TEST_BASE_DIR = "/cs165/generated_data"
-DOCKER_TEST_BASE_DIR = "/cs165/staff_test"
-
+TEST_BASE_DIR = "example_data"
+os.makedirs(TEST_BASE_DIR, exist_ok=True)
 
 def generateDataMilestone2(dataSize):
     outputFile = f"{TEST_BASE_DIR}/data3_batch.csv"
@@ -59,18 +60,17 @@ class ZipfianDistribution:
     def __init__(self, zipfianParam, numElements):
         self.zipfianParam = zipfianParam
         self.numElements = numElements
-        self.H_s = sum((1.0 / k**zipfianParam) for k in range(1, numElements + 1))
 
-    def draw(self, unifSample):
-        total = 0.0
-        k = 0
-        while unifSample >= total:
-            k += 1
-            total += (1.0 / k**self.zipfianParam) / self.H_s
-        return k
+        # Precompute weights
+        ranks = np.arange(1, numElements + 1)
+        self.weights = 1.0 / np.power(ranks, self.zipfianParam)
+        self.weights /= self.weights.sum()  # Normalize to sum to 1
 
     def sample(self, size):
-        return np.vectorize(self.draw)(np.random.uniform(size=size))
+        # Efficient weighted random sampling
+        return np.random.choice(
+            np.arange(1, self.numElements + 1), size=size, p=self.weights
+        )
 
 
 def generateDataMilestone4(
@@ -180,6 +180,66 @@ def generateDataMilestone5(dataSize):
     return df
 
 
+def generateDataMilestone6(dataSize, zipfianParam=1.1, numDistinctElements=None):
+    if numDistinctElements is None:
+        numDistinctElements = dataSize
+
+    outputFile_main = f"{TEST_BASE_DIR}/main_data.csv"
+    outputFile_join = f"{TEST_BASE_DIR}/join_data.csv"
+    header_main = data_gen_utils.generateHeaderLine("db1", "main_tbl", 4)
+    header_join = data_gen_utils.generateHeaderLine("db1", "join_tbl", 4)
+
+    # ---------- main_tbl ----------
+    z_main = ZipfianDistribution(zipfianParam, numDistinctElements)
+    col1_main = np.arange(1, dataSize + 1)
+    col2_main = z_main.sample(dataSize)
+    col3_main = np.random.randint(0, dataSize // 5, size=dataSize)
+    col4_main = np.random.randint(0, 10000, size=dataSize)
+
+    df_main = pd.DataFrame(
+        {
+            "col1": col1_main,
+            "col2": col2_main,
+            "col3": col3_main,
+            "col4": col4_main,
+        }
+    )
+    print("main_tbl generated")
+    df_main.to_csv(
+        outputFile_main, sep=",", index=False, header=header_main, lineterminator="\n"
+    )
+
+    print("main_tbl saved to CSV")
+
+    # ---------- join_tbl ----------
+    joinSize = 1_000_000
+    z_join = ZipfianDistribution(1.2, 100)
+    col1_join = np.arange(1, joinSize + 1)  # unique keys to match col3 in main_tbl
+    col2_join = np.random.randint(0, 500, size=joinSize)
+    col3_join = z_join.sample(joinSize)
+    col4_join = np.random.randint(0, 10000, size=joinSize)
+
+    df_join = pd.DataFrame(
+        {
+            "col1": col1_join,
+            "col2": col2_join,
+            "col3": col3_join,
+            "col4": col4_join,
+        }
+    )
+    print("join_tbl generated")
+
+    df_join.to_csv(
+        outputFile_join, sep=",", index=False, header=header_join, lineterminator="\n"
+    )
+
+    print("join_tbl saved to CSV")
+
+    return df_main, df_join
+
+
+seed = 14
+
 if __name__ == "__main__":
     if len(sys.argv) < 3:
         print(
@@ -195,23 +255,29 @@ if __name__ == "__main__":
 
     milestone = int(sys.argv[1])
 
+    seed = int(sys.argv[2])  # New seed argument
+    np.random.seed(seed)  # Set the seed for reproducibility
+    random.seed(seed)  # Set the seed for reproducibility
+
     if milestone == 2:
-        generateDataMilestone2(int(sys.argv[2]))
+        generateDataMilestone2(int(sys.argv[3]))
     elif milestone == 3:
-        generateDataMilestone3(int(sys.argv[2]))
+        generateDataMilestone3(int(sys.argv[3]))
     elif milestone == 4:
         if len(sys.argv) < 9:
             print("Milestone 4 requires 7 arguments.")
             sys.exit(1)
         generateDataMilestone4(
-            int(sys.argv[2]),
             int(sys.argv[3]),
             int(sys.argv[4]),
             int(sys.argv[5]),
-            float(sys.argv[6]),
-            int(sys.argv[7]),
+            int(sys.argv[6]),
+            float(sys.argv[7]),
+            int(sys.argv[8]),
         )
     elif milestone == 5:
-        generateDataMilestone5(int(sys.argv[2]))
+        generateDataMilestone5(int(sys.argv[3]))
+    elif milestone == 6:
+        generateDataMilestone6(int(sys.argv[3]))
     else:
         print(f"Unknown milestone: {milestone}")
