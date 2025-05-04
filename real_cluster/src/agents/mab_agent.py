@@ -151,6 +151,24 @@ class MultiArmedBanditAgent(BaseAgent):
         else:
             self.failure_counts[request_type, server] += abs(reward)
 
+    def batch_update(self, data: list[tuple[int, int, float]]):
+        """
+        Batch update from delayed training data.
+
+        Args:
+            data: List of (request_type, action, reward) tuples
+        """
+        for req_type, action, reward in data:
+            self.q_values[req_type, action] += self.alpha * (
+                reward - self.q_values[req_type, action]
+            )
+            self.action_counts[req_type, action] += 1
+
+            if reward > 0:
+                self.success_counts[req_type, action] += reward
+            else:
+                self.failure_counts[req_type, action] += abs(reward)
+
     def reset(self):
         """Reset the agent's state for a new episode."""
         # No need to reset Q-values or counts as they are learned across episodes
@@ -158,59 +176,59 @@ class MultiArmedBanditAgent(BaseAgent):
         self.last_action = None
 
 
-# Simple linear model for contextual bandit updates
-class LinearModel:
-    """Simple linear model for contextual bandit."""
+# # Simple linear model for contextual bandit updates
+# class LinearModel:
+#     """Simple linear model for contextual bandit."""
 
-    def __init__(self, input_dim, lr=0.01):
-        self.weights = np.zeros(input_dim)
-        self.lr = lr
+#     def __init__(self, input_dim, lr=0.01):
+#         self.weights = np.zeros(input_dim)
+#         self.lr = lr
 
-    def predict(self, x):
-        return np.dot(self.weights, x)
+#     def predict(self, x):
+#         return np.dot(self.weights, x)
 
-    def update(self, x, reward):
-        error = reward - self.predict(x)
-        self.weights += self.lr * error * x
+#     def update(self, x, reward):
+#         error = reward - self.predict(x)
+#         self.weights += self.lr * error * x
 
 
-class ContextualBanditAgent(BaseAgent):
-    """
-    Contextual Bandit agent for request routing using context features.
-    """
+# class ContextualBanditAgent(BaseAgent):
+#     """
+#     Contextual Bandit agent for request routing using context features.
+#     """
 
-    def __init__(self, num_servers, num_request_types, lr=0.01, epsilon=0.1, **kwargs):
-        super(ContextualBanditAgent, self).__init__(num_servers, **kwargs)
-        self.num_servers = num_servers
-        self.num_request_types = num_request_types
-        self.epsilon = epsilon
-        # input dimension: one-hot request type + cpu + ram
-        self.input_dim = num_request_types + 2
-        # one linear model per server
-        self.models = [LinearModel(self.input_dim, lr) for _ in range(num_servers)]
-    def _build_context(self, observation, server_idx):
-        # Extract request type one-hot and resource utilizations
-        cpu_util = observation["server_utils"][server_idx, 0]
-        ram_util = observation["server_utils"][server_idx, 1]
-        request_type_onehot = observation["request_type"]
-        return np.concatenate([request_type_onehot, [cpu_util, ram_util]])
+#     def __init__(self, num_servers, num_request_types, lr=0.01, epsilon=0.1, **kwargs):
+#         super(ContextualBanditAgent, self).__init__(num_servers, **kwargs)
+#         self.num_servers = num_servers
+#         self.num_request_types = num_request_types
+#         self.epsilon = epsilon
+#         # input dimension: one-hot request type + cpu + ram
+#         self.input_dim = num_request_types + 2
+#         # one linear model per server
+#         self.models = [LinearModel(self.input_dim, lr) for _ in range(num_servers)]
+#     def _build_context(self, observation, server_idx):
+#         # Extract request type one-hot and resource utilizations
+#         cpu_util = observation["server_utils"][server_idx, 0]
+#         ram_util = observation["server_utils"][server_idx, 1]
+#         request_type_onehot = observation["request_type"]
+#         return np.concatenate([request_type_onehot, [cpu_util, ram_util]])
 
-    def select_action(self, observation):
-        # Build context for each server and predict reward
-        contexts = [
-            self._build_context(observation, i) for i in range(self.num_servers)
-        ]
-        estimates = [model.predict(ctx) for model, ctx in zip(self.models, contexts)]
-        # Epsilon-greedy selection
-        if np.random.random() < self.epsilon:
-            return np.random.randint(0, self.num_servers)
-        return int(np.argmax(estimates))
+#     def select_action(self, observation):
+#         # Build context for each server and predict reward
+#         contexts = [
+#             self._build_context(observation, i) for i in range(self.num_servers)
+#         ]
+#         estimates = [model.predict(ctx) for model, ctx in zip(self.models, contexts)]
+#         # Epsilon-greedy selection
+#         if np.random.random() < self.epsilon:
+#             return np.random.randint(0, self.num_servers)
+#         return int(np.argmax(estimates))
 
-    def update(self, observation, action, reward, next_observation=None, done=None):
-        # Update the selected model with observed reward
-        context = self._build_context(observation, action)
-        self.models[action].update(context, reward)
+#     def update(self, observation, action, reward, next_observation=None, done=None):
+#         # Update the selected model with observed reward
+#         context = self._build_context(observation, action)
+#         self.models[action].update(context, reward)
 
-    def reset(self):
-        """Reset any per-episode state if needed (none for contextual)."""
-        pass
+#     def reset(self):
+#         """Reset any per-episode state if needed (none for contextual)."""
+#         pass

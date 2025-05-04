@@ -7,10 +7,10 @@ class RandomAgent(BaseAgent):
     Random load balancing agent.
     Randomly selects a server for each request.
     """
-    
+
     def __init__(self, num_servers, **kwargs):
         super(RandomAgent, self).__init__(num_servers, **kwargs)
-    
+
     def select_action(self, observation):
         """
         Select a random server.
@@ -22,7 +22,7 @@ class RandomAgent(BaseAgent):
             int: Selected server index
         """
         return np.random.randint(0, self.num_servers)
-    
+
     def update(self, observation, action, reward, next_observation, done):
         """
         Update agent state (no-op for Random).
@@ -35,7 +35,10 @@ class RandomAgent(BaseAgent):
             done: Whether the episode is done
         """
         pass  # No need to update anything for Random agent
-    
+
+    def batch_update(self, data):
+        pass
+
     def reset(self):
         """Reset agent state."""
         pass  # Nothing to reset for Random agent
