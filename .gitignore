@@ -184,3 +184,6 @@ ppo-rounting-agent.zip
 
 real_cluster/data_gen/generated_data/*
 real_cluster/results/*
+real_cluster/*.zip
+real_cluster/example_data/*
+*/ec2_config_setup.md

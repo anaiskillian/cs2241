@@ -1,5 +1,7 @@
+# This file is only relevant for knowing how the HOSTS array is structured.
+
 HOSTS = [
-    # "ec2-3-148-166-172.us-east-2.compute.amazonaws.com", # these are invalid.
+    # "ec2-18-116-13-179.us-east-2.compute.amazonaws.com", # these are invalid.
     # "ec2-3-91-21-145.us-east-2.compute.amazonaws.com",
     # "ec2-18-191-234-182.us-east-2.compute.amazonaws.com",
     # "ec2-3-128-122-76.us-east-2.compute.amazonaws.com",
@@ -27,7 +29,7 @@ async def main():
         db_config = {
             "user": "postgres",
             "password": "2241proj",
-            "database": "cs2241_data",
+            "database": "postgres",
             "host": host,
             "port": 5432,
             "min_size": 99,
