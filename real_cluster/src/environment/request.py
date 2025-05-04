@@ -27,7 +27,7 @@ class QueryType(IntEnum):
     LEFT_JOIN = auto()  # Outer join
     SUBQUERY_IN = auto()  # Correlated / semi-join via IN (sub-select)
     WINDOW_FUNCTION = auto()  # Analytic function (e.g. running total)
-
+    PING = auto()  # SELECT 1; (no-op)
 
 @dataclass
 class Request:
