@@ -15,7 +15,8 @@ class QueryType(IntEnum):
     PostgreSQL execution engine.  Ordered by ever-growing complexity.
     """
 
-    TABLE_SCAN = 0  # Simple LIMIT on the whole table
+    PING = 0  # SELECT 1; (no-op)
+    TABLE_SCAN = auto()  # Simple LIMIT on the whole table
     WHERE_PREDICATE = auto()  # Single predicate on one column (=, <, > …)
     RANGE_PREDICATE = auto()  # BETWEEN / numeric range
     ORDER_LIMIT = auto()  # ORDER BY … LIMIT …
@@ -27,7 +28,8 @@ class QueryType(IntEnum):
     LEFT_JOIN = auto()  # Outer join
     SUBQUERY_IN = auto()  # Correlated / semi-join via IN (sub-select)
     WINDOW_FUNCTION = auto()  # Analytic function (e.g. running total)
-    PING = auto()  # SELECT 1; (no-op)
+    SPECIFIC_VALUE_LOOKUP = auto()
+    SELECT_COLUMN_SUBSET = auto()
 
 @dataclass
 class Request:
@@ -58,143 +60,150 @@ import random
 from typing import Callable, List, Tuple
 
 
+############################################################
+##################### QUERY GENERATION #####################
+############################################################
+
+from typing import Callable, List, Dict, Tuple
+import random
+from .request import QueryType
+
+
 def make_query_generator(
-    table: str,
-    columns: List[str],
+    tables: List[Dict[str, List[str]]],
     *,
     seed: int | None = None,
-    numeric_cols: List[str] | None = None,
-    text_cols: List[str] | None = None,
 ) -> Callable[[], Tuple[str, QueryType]]:
     """
-    Return a zero-arg callable that yields ``(sql, QueryType)``.
+    Generate SQL queries for use in training.
 
     Parameters
     ----------
-    table         : fully-qualified table name.
-    columns       : every column in that table.
-    numeric_cols  : subset of *numeric* columns (defaults to ``columns``).
-    text_cols     : subset of *textual* columns (defaults to ``columns``).
+    tables : List of dicts with 'name' and 'columns' keys.
+    seed : Optional int to seed random generator.
 
-    Notes
-    -----
-    • The generator is **stateless** - perfect for parallel Gym workers.
-    • If you do not care about data types, just pass ``columns`` for all
-      three arguments and every query will still be syntactically valid.
+    Returns
+    -------
+    A function that yields (SQL string, QueryType).
     """
     rng = random.Random(seed)
-    numeric_cols = numeric_cols or columns
-    text_cols = text_cols or columns
-
-    OPS = ["=", "<", ">", "<=", ">="]
+    OPS = ["=", "<=", ">="]
     DIRECTIONS = ["ASC", "DESC"]
     AGG_FUNCS = ["AVG", "COUNT", "SUM", "MAX", "MIN"]
 
     def _next_query() -> Tuple[str, QueryType]:
         qt: QueryType = rng.choice(list(QueryType))
 
-        if qt is QueryType.TABLE_SCAN:
-            lim = rng.randint(10, 500)
-            sql = f"SELECT * FROM {table} LIMIT {lim};"
+        main = tables[0]
+        join = tables[1] if len(tables) > 1 else tables[0]
+        main_tbl, join_tbl = main["name"], join["name"]
+        main_cols, join_cols = main["columns"], join["columns"]
 
-        elif qt is QueryType.WHERE_PREDICATE:
-            col = rng.choice(columns)
+        # Prefer col1 for joins and filters if available
+        join_key = (
+            "col1"
+            if "col1" in main_cols and "col1" in join_cols
+            else rng.choice(main_cols)
+        )
+
+        if qt == QueryType.TABLE_SCAN:
+            lim = rng.randint(10, 500)
+            sql = f"SELECT * FROM {main_tbl} LIMIT {lim};"
+
+        elif qt == QueryType.SPECIFIC_VALUE_LOOKUP:
+            col = rng.choice(main_cols)
+            val = rng.randint(1, 1000)
+            sql = f"SELECT * FROM {main_tbl} WHERE {col} = {val};"
+
+        elif qt == QueryType.WHERE_PREDICATE:
+            col = rng.choice(main_cols)
             op = rng.choice(OPS)
             val = rng.randint(0, 1000)
-            sql = f"SELECT * FROM {table} WHERE {col} {op} {val};"
+            sql = f"SELECT * FROM {main_tbl} WHERE {col} {op} {val};"
 
-        elif qt is QueryType.RANGE_PREDICATE:
-            col = rng.choice(numeric_cols)
+        elif qt == QueryType.RANGE_PREDICATE:
+            col = rng.choice(main_cols)
             lo = rng.randint(0, 400)
             hi = lo + rng.randint(50, 400)
-            sql = f"SELECT * FROM {table} WHERE {col} BETWEEN {lo} AND {hi};"
+            sql = f"SELECT * FROM {main_tbl} WHERE {col} BETWEEN {lo} AND {hi};"
 
-        elif qt is QueryType.ORDER_LIMIT:
-            col = rng.choice(columns)
-            direc = rng.choice(DIRECTIONS)
+        elif qt == QueryType.SELECT_COLUMN_SUBSET:
+            selected = rng.sample(main_cols, rng.randint(1, len(main_cols)))
             lim = rng.randint(10, 200)
-            sql = f"SELECT * FROM {table} ORDER BY {col} {direc} LIMIT {lim};"
+            sql = f"SELECT {', '.join(selected)} FROM {main_tbl} LIMIT {lim};"
 
-        elif qt is QueryType.MULTI_COLUMN_ORDER:
-            col1, col2 = rng.sample(columns, 2)
+        elif qt == QueryType.INNER_JOIN:
             lim = rng.randint(10, 200)
             sql = (
-                f"SELECT * FROM {table} "
+                f"SELECT a.{join_key}, b.{join_key} "
+                f"FROM {main_tbl} a "
+                f"JOIN {join_tbl} b ON a.{join_key} = b.{join_key} "
+                f"LIMIT {lim};"
+            )
+
+        elif qt == QueryType.LEFT_JOIN:
+            lim = rng.randint(10, 200)
+            sql = (
+                f"SELECT a.{join_key}, b.{join_key} "
+                f"FROM {main_tbl} a "
+                f"LEFT JOIN {join_tbl} b ON a.{join_key} = b.{join_key} "
+                f"LIMIT {lim};"
+            )
+
+        elif qt == QueryType.ORDER_LIMIT:
+            col = rng.choice(main_cols)
+            dir_ = rng.choice(DIRECTIONS)
+            lim = rng.randint(10, 200)
+            sql = f"SELECT * FROM {main_tbl} ORDER BY {col} {dir_} LIMIT {lim};"
+
+        elif qt == QueryType.GROUP_BY:
+            col = rng.choice(main_cols)
+            sql = f"SELECT {col}, COUNT(*) FROM {main_tbl} GROUP BY {col};"
+
+        elif qt == QueryType.AGGREGATE:
+            func = rng.choice(AGG_FUNCS)
+            col = rng.choice(main_cols)
+            op = rng.choice(OPS)
+            val = rng.randint(0, 1000)
+            sql = f"SELECT {func}({col}) FROM {main_tbl} WHERE {col} {op} {val};"
+
+        elif qt == QueryType.SUBQUERY_IN:
+            col = rng.choice(main_cols)
+            val = rng.randint(0, 1000)
+            sql = (
+                f"SELECT * FROM {main_tbl} WHERE {col} IN ("
+                f"SELECT {col} FROM {join_tbl} WHERE {col} > {val} LIMIT 20);"
+            )
+
+        elif qt == QueryType.WINDOW_FUNCTION:
+            num = rng.choice(main_cols)
+            sql = (
+                f"SELECT {num}, SUM({num}) OVER (ORDER BY {num}) AS running_sum "
+                f"FROM {main_tbl} LIMIT 100;"
+            )
+
+        elif qt == QueryType.MULTI_COLUMN_ORDER:
+            col1, col2 = rng.sample(main_cols, 2)
+            lim = rng.randint(10, 200)
+            sql = (
+                f"SELECT * FROM {main_tbl} "
                 f"ORDER BY {col1} ASC, {col2} DESC "
                 f"LIMIT {lim};"
             )
 
-        elif qt is QueryType.GROUP_BY:
-            col = rng.choice(columns)
-            sql = f"SELECT {col}, COUNT(*) FROM {table} GROUP BY {col};"
-
-        elif qt is QueryType.GROUP_BY_HAVING:
-            grp = rng.choice(columns)
-            num = rng.choice(numeric_cols)
+        elif qt == QueryType.GROUP_BY_HAVING:
+            grp = rng.choice(main_cols)
+            num = rng.choice(main_cols)
             thr = rng.randint(10, 500)
             sql = (
                 f"SELECT {grp}, AVG({num}) AS avg_val "
-                f"FROM {table} "
+                f"FROM {main_tbl} "
                 f"GROUP BY {grp} "
                 f"HAVING AVG({num}) > {thr};"
             )
-
-        elif qt is QueryType.AGGREGATE:
-            func = rng.choice(AGG_FUNCS)
-            col = rng.choice(numeric_cols)
-            op = rng.choice(OPS)
-            val = rng.randint(0, 1000)
-            sql = f"SELECT {func}({col}) FROM {table} WHERE {col} {op} {val};"
-
-        elif qt is QueryType.INNER_JOIN:
-            a, b = "a", "b"
-            col1 = rng.choice(columns)
-            col2 = rng.choice(columns)
-            lim = rng.randint(10, 200)
-            sql = (
-                f"SELECT {a}.{col1}, {b}.{col2} "
-                f"FROM {table} {a} "
-                f"JOIN {table} {b} ON {a}.{col1} = {b}.{col1} "
-                f"LIMIT {lim};"
-            )
-
-        elif qt is QueryType.LEFT_JOIN:
-            a, b = "l", "r"
-            col1 = rng.choice(columns)
-            col2 = rng.choice(columns)
-            lim = rng.randint(10, 200)
-            sql = (
-                f"SELECT {a}.{col1}, {b}.{col2} "
-                f"FROM {table} {a} "
-                f"LEFT JOIN {table} {b} ON {a}.{col1} = {b}.{col1} "
-                f"LIMIT {lim};"
-            )
-
-        elif qt is QueryType.SUBQUERY_IN:
-            col = rng.choice(columns)
-            op = rng.choice(OPS)
-            val = rng.randint(0, 1000)
-            sql = (
-                f"SELECT * FROM {table} "
-                f"WHERE {col} IN ("
-                f"SELECT {col} FROM {table} WHERE {col} {op} {val} LIMIT 20"
-                f");"
-            )
-
-        elif qt is QueryType.WINDOW_FUNCTION:
-            num = rng.choice(numeric_cols)
-            date = rng.choice(columns)
-            lim = rng.randint(10, 200)
-            sql = (
-                f"SELECT {date}, {num}, "
-                f"SUM({num}) OVER (ORDER BY {date}) AS running_total "
-                f"FROM {table} "
-                f"LIMIT {lim};"
-            )
-
-        else:  # never reached - keeps type-checkers happy
+        else:
             sql = "SELECT 1;"
-            qt = QueryType.TABLE_SCAN
+            qt = QueryType.PING
 
         return sql, qt
 

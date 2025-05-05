@@ -41,6 +41,8 @@ from src.agents.random_agent import RandomAgent
 from src.agents.least_loaded import LeastLoadedAgent
 from src.agents.mab_agent import MultiArmedBanditAgent, BanditStrategy
 from src.utils.metrics import PerformanceMetrics
+from src.environment.request import make_query_generator
+
 
 # from src.utils.workload_gen import WorkloadGenerator
 from src.utils.visualization import (
@@ -50,7 +52,7 @@ from src.utils.visualization import (
     plot_comparative_metrics,
 )
 from src.config import MAB_CONFIG  # ← optimised defaults
-from src.config import HOSTS
+from src.config import DB_TABLES_CONFIG
 
 
 # ╔══════════════════════════════════════════════════════════════════════════╗
@@ -65,15 +67,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--experiment",
         type=str,
-        default="baseline",
-        choices=["baseline", "workload", "hyperparameter"],
+        default="delayed_baseline",
+        choices=["baseline", "workload", "hyperparameter", "delayed_baseline"],
         help="Which experiment pipeline to run",
     )
-    parser.add_argument("--episodes", type=int, default=5, help="# episodes")
+    parser.add_argument("--episodes", type=int, default=10, help="# episodes")
     parser.add_argument("--steps", type=int, default=1000, help="# steps / ep")
+    parser.add_argument(
+        "--test_steps", type=int, default=10000, help="# steps for final test episode"
+    )
     parser.add_argument("--seed", type=int, default=42, help="RNG seed")
     parser.add_argument(
-        "--history", type=int, default=5, help="History length exposed in the RL state"
+        "--history",
+        type=int,
+        default=10000,
+        help="History length exposed in the RL state",
     )
 
     # ── database connection details ──────────────────────────────────────
@@ -136,12 +144,15 @@ def create_environment(args: argparse.Namespace) -> RealServerCluster:
         # pool size is set internally by RealServerCluster
     }
 
+    query_generator = make_query_generator(DB_TABLES_CONFIG, seed=14)
+
     # ── 3) instantiate env ───────────────────────────────────────────────
     env = RealServerCluster(
         hosts=HOSTS,
         db_cfg=db_cfg,
         history_length=args.history,
         max_steps=args.steps,
+        query_generator=query_generator,
     )
     return env
 
@@ -181,6 +192,35 @@ def create_agents(env: RealServerCluster, args: argparse.Namespace):
 # ╔══════════════════════════════════════════════════════════════════════════╗
 # ║                         Episode execution loop                          ║
 # ╚══════════════════════════════════════════════════════════════════════════╝
+from typing import Tuple
+
+
+def run_episode_delayed_train(
+    env: RealServerCluster, agent, max_steps: int = 1000, render: bool = False
+) -> Tuple[PerformanceMetrics, List[Tuple[int, int, float]]]:
+    obs, _ = env.reset()
+    agent.reset()
+    metrics = PerformanceMetrics()
+
+    done, step = False, 0
+    while not done and step < max_steps:
+        action = agent.select_action(obs)
+        next_obs, reward, done, info = env.step(action)
+
+        # -- update metrics like before --
+        server_utils = [cpu for cpu, _ram in env.server_utils]
+        metrics.update(info, server_utils)
+
+        obs, step = next_obs, step + 1
+
+        if render and step % 1000 == 0:
+            env.render()
+
+    # at this point, all requests have been drained and rewards known
+    training_data = env.get_episode_data()
+    return metrics, training_data
+
+
 def run_episode(
     env: RealServerCluster, agent, max_steps: int = 1000, render: bool = False
 ) -> PerformanceMetrics:
@@ -236,7 +276,7 @@ def baseline_experiment(env, agents, args):
         all_metrics[name] = agent_metrics
 
         # per-agent plot
-        plot_server_utilization(agent_metrics.server_utilizations, name)
+        # plot_server_utilization(agent_metrics.server_utilizations, name)
 
         print(
             f"    avg-latency {avg['avg_latency']:.4f}  "
@@ -265,6 +305,97 @@ def baseline_experiment(env, agents, args):
     print(f"✔ Baseline complete → {outdir}")
 
 
+from src.agents.base_agent import BaseAgent
+from collections import Counter
+
+
+def delayed_baseline_experiment(
+    env: RealServerCluster, agents: dict[str, BaseAgent], args
+):
+    print("▶ Running *delayed baseline* MAB experiment …")
+    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    outdir = Path(f"results/delayed_baseline_{ts}")
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    results_summary = {}
+    env.turn_on_train_mode(args.steps)
+    for name, agent in agents.items():
+        print(f"  ↳ {name}")
+
+        # ───── Training Phase (skip metrics collection) ─────
+        if getattr(agent, "trainable", False):
+            for ep in range(args.episodes):
+                print(f"    training episode {ep + 1}/{args.episodes}")
+                _, training_data = run_episode_delayed_train(
+                    env, agent, max_steps=args.steps, render=False
+                )
+                print(f"    training data: {len(training_data)}")
+                print(Counter([x[1] for x in training_data]))
+                agent.batch_update(training_data)
+        else:
+            print("    ⏩ not trainable — skipping training phase")
+
+        # ───── Testing Phase (final eval) ─────
+        print("    ➤ running final test episode")
+        env.turn_on_test_mode(args.test_steps)
+        # env.reset()
+        agent.reset()
+        print("\n\n----------------------------")
+        print("Verify that the environment is reset:")
+        print(env.pending_requests)
+        print(env.latency_hist)
+        print(env.steps_taken)
+        print(env.average_latency)
+        print("Verification complete.")
+        print("----------------------------")
+
+        # ignoring both metrics and training data because data
+        # is stored in environment
+        start_time = time.perf_counter()
+        metrics, training_data = run_episode_delayed_train(
+            env, agent, max_steps=args.test_steps, render=False
+        )
+        end_time = time.perf_counter()
+        print(f"    test episode took {end_time - start_time:.4f} s")
+
+        assert env.total_latency == sum(env.latency_hist)
+        assert env.completed_cnt == len(env.latency_hist)
+        total_latency = sum(env.latency_hist)
+        num_requests = len(env.latency_hist)
+
+        assert (
+            env.steps_taken == args.test_steps
+        ), f"[{name}] Mismatch in steps: expected {args.test_steps}, got {env.steps_taken}"
+        assert num_requests > 0, f"[{name}] No completed requests in final episode"
+        assert (
+            num_requests == args.test_steps
+        ), f"[{name}] Mismatch in completed requests: expected {args.test_steps}, got {num_requests}"
+
+        wall_time = end_time - start_time
+        avg_latency = total_latency / num_requests
+        throughput = num_requests / wall_time
+
+        results_summary[name] = {
+            "total_latency": total_latency,
+            "avg_latency": avg_latency,
+            "throughput": throughput,
+            "completed_requests": num_requests,
+        }
+
+        print(
+            f"    [Test] avg-latency {avg_latency:.4f} s  "
+            f"throughput {throughput:.4f} req/s  "
+            f"completed {num_requests}"
+        )
+        env.turn_on_train_mode(args.steps)
+
+    # Save to JSON
+    with (outdir / "results.json").open("w") as fp:
+        json.dump(results_summary, fp, indent=2)
+
+    print(f"✔ Delayed experiment complete → {outdir}")
+
+
 def workload_experiment(env, agents, args):
     print("▶ Workload sensitivity experiment …")
     outdir = Path("results/workload")
@@ -291,7 +422,7 @@ def workload_experiment(env, agents, args):
             env.reset()
             ag.reset()
             env.pending_requests = wl_reqs.copy()  # plug workload
-            m = run_episode(env, ag, max_steps=args.steps, render=False)
+            m = run_episode(env, ag, steps=args.steps, render=False)
             wl_metrics[agent_name] = m
 
         # plotting
@@ -387,8 +518,12 @@ def main() -> None:
     env = create_environment(args)
     agents = create_agents(env, args)
 
+    print(args)
+
     if args.experiment == "baseline":
         baseline_experiment(env, agents, args)
+    elif args.experiment == "delayed_baseline":
+        delayed_baseline_experiment(env, agents, args)
     elif args.experiment == "workload":
         workload_experiment(env, agents, args)
     elif args.experiment == "hyperparameter":

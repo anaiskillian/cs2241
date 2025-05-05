@@ -3,12 +3,18 @@
 Configuration settings for the request routing system.
 """
 
+HOST_IPS = ["13.59.230.137", "18.191.248.228", "18.191.169.241", "3.19.59.13"]
 
 HOSTS = [
-    "ec2-3-145-83-79.us-east-2.compute.amazonaws.com",
-    "ec2-3-17-24-78.us-east-2.compute.amazonaws.com",
-    "ec2-18-218-161-33.us-east-2.compute.amazonaws.com",
-    "ec2-3-17-193-60.us-east-2.compute.amazonaws.com",
+    f"ec2-{ip.replace(".", "-")}.us-east-2.compute.amazonaws.com" for ip in HOST_IPS
+]
+
+
+DB_TABLES_CONFIG = [
+    # {"name": "main_tbl", "columns": ["col1", "col2", "col3", "col4"]},
+    # {"name": "main_tbl_small", "columns": ["col1", "col2", "col3", "col4"]},
+    {"name": "main_tbl_tiny", "columns": ["col1", "col2", "col3", "col4"]},
+    {"name": "join_tbl", "columns": ["col1", "col2", "col3", "col4"]},
 ]
 
 # Environment settings
