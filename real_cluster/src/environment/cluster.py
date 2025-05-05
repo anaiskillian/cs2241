@@ -130,8 +130,11 @@ class RealServerCluster(gym.Env):
         )  # (request_id, latency)
 
         # rolling metrics
-        self.latency_hist = deque([0.0] * history_length, maxlen=history_length)
-        self.decision_hist = deque([0] * history_length, maxlen=history_length)
+        # initialize latency and decision history with empty
+
+        self.latency_hist: Deque[float] = deque(maxlen=history_length)
+        self.decision_hist: Deque[int] = deque(maxlen=history_length)
+
         self.total_latency = 0.0
         self.completed_cnt = 0
 
@@ -163,6 +166,33 @@ class RealServerCluster(gym.Env):
                 "request_type": spaces.MultiBinary(len(QueryType)),
             }
         )
+        self.request_actions: Dict[str, Tuple[int, int]] = (
+            {}
+        )  # request_id → (action, request_type)
+        self.training_data: List[Tuple[int, int, float]] = (
+            []
+        )  # (request_type, action, reward)
+
+        # debug pring the initialization
+        print(f"RealServerCluster initialized with {self.num_hosts} hosts.")
+        print(f"Database configuration: {db_cfg}")
+        print(f"History length: {self.history_length}")
+        print(f"Max steps per episode: {self.max_steps}")
+        print(f"Pool size per host: {pool_size}")
+        print(f"Query generator: {self.query_generator.__name__}")
+        print(f"Initial CPU utilization: {init_cpu_util}")
+        print(f"Initial RAM utilization: {init_ram_util}")
+        print(f"Action space: {self.action_space}")
+        print(f"Observation space: {self.observation_space}")
+        print(f"Server utilization shape: {self.server_utils.shape}")
+        print(f"Server utilization initial values: {self.server_utils}")
+        print(f"Pending requests: {self.pending_requests}")
+        print(f"Active requests: {self.active_requests}")
+        print(f"Latency history: {self.latency_hist}")
+        print(f"Decision history: {self.decision_hist}")
+        print(f"Total latency: {self.total_latency}")
+        print(f"Completed count: {self.completed_cnt}")
+        print(f"Action request mapping: {self.request_actions}")
 
     # ------------------------------------------------------------
     # Gym API
@@ -176,8 +206,10 @@ class RealServerCluster(gym.Env):
 
         self.latency_hist.clear()
         self.decision_hist.clear()
-        self.latency_hist.extend([0.0] * self.history_length)
-        self.decision_hist.extend([0] * self.history_length)
+        # self.latency_hist.extend([0.0] * self.history_length)
+        # self.decision_hist.extend([0] * self.history_length)
+        self.training_data.clear()
+        self.request_actions.clear()
 
         self.total_latency = 0.0
         self.completed_cnt = 0
@@ -234,17 +266,37 @@ class RealServerCluster(gym.Env):
             "completed": self.completed_cnt,
             "steps": self.steps_taken,
             "success_rate": (
-                cnt / len(latencies_this_step) if latencies_this_step else 1.0
+                (len(latencies_this_step) - cnt) / len(latencies_this_step)
+                if latencies_this_step
+                else 1.0
             ),
             "throughput": self.completed_cnt / self.steps_taken,
             "latencies": latencies_this_step,
         }
+
+        self.request_actions[req.request_id] = (action, req.query_type)
+        if done:
+            print(f"Waiting for {len(self.active_requests)} requests to finish...")
+            while self.active_requests:
+                self._loop.run_until_complete(asyncio.sleep(0.1))
+                self._drain_latency_queue()
         return self._get_obs(), reward, done, info
 
     # ------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------
     # -- request lifecycle ------------------------------------------------
+    def get_episode_data(self) -> List[Tuple[int, int, float]]:
+        return self.training_data.copy()
+
+    def turn_on_test_mode(self, test_mode_steps: int):
+        self.reset()
+        self.max_steps = test_mode_steps
+
+    def turn_on_train_mode(self, train_mode_steps: int):
+        self.reset()
+        self.max_steps = train_mode_steps
+
     def _enqueue_new_request(self):
         sql, q_type = self.query_generator()
         new_req = Request(
@@ -260,6 +312,14 @@ class RealServerCluster(gym.Env):
         drained: List[float] = []
         while not self._latency_queue.empty():
             req_id, latency = self._latency_queue.get_nowait()
+
+            assert req_id in self.active_requests, "unknown request ID"
+            if req_id in self.request_actions:
+                action, req_type = self.request_actions.pop(req_id)
+                reward = 1.0 / (1.0 + latency)
+                if latency > 60.0:
+                    reward -= 2  # match penalty logic
+                self.training_data.append((req_type, action, reward))
             drained.append(latency)
             # bookkeeping
             self.latency_hist.append(latency)
