@@ -76,7 +76,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--test_steps", type=int, default=10000, help="# steps for final test episode"
     )
-    parser.add_argument("--seed", type=int, default=42, help="RNG seed")
+    parser.add_argument("--seed", type=int, default=int(time.time()), help="RNG seed")
     parser.add_argument(
         "--history",
         type=int,
@@ -105,8 +105,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--mab_strategy",
         type=str,
-        default="ucb",
-        choices=["epsilon_greedy", "ucb", "thompson"],
+        default="all",
+        choices=["epsilon_greedy", "ucb", "thompson", "all"],
         help="Which MAB flavour to *default* to (all run in baseline)",
     )
 
@@ -182,6 +182,14 @@ def create_agents(env: RealServerCluster, args: argparse.Namespace):
     elif args.mab_strategy == "ucb":
         _mab("MAB (UCB)", BanditStrategy.UCB, MAB_CONFIG["ucb"])
     elif args.mab_strategy == "thompson":
+        _mab("MAB (Thompson)", BanditStrategy.THOMPSON_SAMPLING, MAB_CONFIG["thompson"])
+    elif args.mab_strategy == "all":
+        _mab(
+            "MAB (ϵ-Greedy)",
+            BanditStrategy.EPSILON_GREEDY,
+            MAB_CONFIG["epsilon_greedy"],
+        )
+        _mab("MAB (UCB)", BanditStrategy.UCB, MAB_CONFIG["ucb"])
         _mab("MAB (Thompson)", BanditStrategy.THOMPSON_SAMPLING, MAB_CONFIG["thompson"])
     else:  # pragma: no cover
         raise ValueError(f"Unknown strategy {args.mab_strategy}")
@@ -307,7 +315,7 @@ def baseline_experiment(env, agents, args):
 
 from src.agents.base_agent import BaseAgent
 from collections import Counter
-
+import time
 
 def delayed_baseline_experiment(
     env: RealServerCluster, agents: dict[str, BaseAgent], args
@@ -340,14 +348,14 @@ def delayed_baseline_experiment(
         env.turn_on_test_mode(args.test_steps)
         # env.reset()
         agent.reset()
-        print("\n\n----------------------------")
-        print("Verify that the environment is reset:")
-        print(env.pending_requests)
-        print(env.latency_hist)
-        print(env.steps_taken)
-        print(env.average_latency)
-        print("Verification complete.")
-        print("----------------------------")
+        # print("\n\n----------------------------")
+        # print("Verify that the environment is reset:")
+        # print(env.pending_requests)
+        # print(env.latency_hist)
+        # print(env.steps_taken)
+        # print(env.average_latency)
+        # print("Verification complete.")
+        # print("----------------------------")
 
         # ignoring both metrics and training data because data
         # is stored in environment
@@ -379,8 +387,15 @@ def delayed_baseline_experiment(
             "total_latency": total_latency,
             "avg_latency": avg_latency,
             "throughput": throughput,
+            "avg_throughput": throughput,
             "completed_requests": num_requests,
+            "query_type_history": [t[0] for t in training_data],
+            "action_history": [int(t[1]) for t in training_data],
+            "reward_history": [t[2] for t in training_data],
         }
+        # save checkpoint results to JSON
+        with (outdir / "results.json").open("w") as fp:
+            json.dump(results_summary, fp, indent=2)
 
         print(
             f"    [Test] avg-latency {avg_latency:.4f} s  "
@@ -388,11 +403,24 @@ def delayed_baseline_experiment(
             f"completed {num_requests}"
         )
         env.turn_on_train_mode(args.steps)
+        print(f"Finished with agent {name} in {wall_time:.4f} seconds")
+        time.sleep(5)
 
     # Save to JSON
     with (outdir / "results.json").open("w") as fp:
         json.dump(results_summary, fp, indent=2)
 
+    #  Plot results_summary in plots
+    # plot_latency_comparison(
+    #     {n: [v["avg_latency"]] for n, v in results_summary.items()},
+    # )
+    # plot_throughput_comparison(
+    #     {n: [v["throughput"]] for n, v in results_summary.items()},
+    # )
+
+    plot_comparative_metrics(metrics=results_summary)
+
+    os.system(f"mv *.png {outdir}/")
     print(f"✔ Delayed experiment complete → {outdir}")
 
 

@@ -174,25 +174,25 @@ class RealServerCluster(gym.Env):
         )  # (request_type, action, reward)
 
         # debug pring the initialization
-        print(f"RealServerCluster initialized with {self.num_hosts} hosts.")
-        print(f"Database configuration: {db_cfg}")
-        print(f"History length: {self.history_length}")
-        print(f"Max steps per episode: {self.max_steps}")
-        print(f"Pool size per host: {pool_size}")
-        print(f"Query generator: {self.query_generator.__name__}")
-        print(f"Initial CPU utilization: {init_cpu_util}")
-        print(f"Initial RAM utilization: {init_ram_util}")
-        print(f"Action space: {self.action_space}")
-        print(f"Observation space: {self.observation_space}")
-        print(f"Server utilization shape: {self.server_utils.shape}")
-        print(f"Server utilization initial values: {self.server_utils}")
-        print(f"Pending requests: {self.pending_requests}")
-        print(f"Active requests: {self.active_requests}")
-        print(f"Latency history: {self.latency_hist}")
-        print(f"Decision history: {self.decision_hist}")
-        print(f"Total latency: {self.total_latency}")
-        print(f"Completed count: {self.completed_cnt}")
-        print(f"Action request mapping: {self.request_actions}")
+        # print(f"RealServerCluster initialized with {self.num_hosts} hosts.")
+        # print(f"Database configuration: {db_cfg}")
+        # print(f"History length: {self.history_length}")
+        # print(f"Max steps per episode: {self.max_steps}")
+        # print(f"Pool size per host: {pool_size}")
+        # print(f"Query generator: {self.query_generator.__name__}")
+        # print(f"Initial CPU utilization: {init_cpu_util}")
+        # print(f"Initial RAM utilization: {init_ram_util}")
+        # print(f"Action space: {self.action_space}")
+        # print(f"Observation space: {self.observation_space}")
+        # print(f"Server utilization shape: {self.server_utils.shape}")
+        # print(f"Server utilization initial values: {self.server_utils}")
+        # print(f"Pending requests: {self.pending_requests}")
+        # print(f"Active requests: {self.active_requests}")
+        # print(f"Latency history: {self.latency_hist}")
+        # print(f"Decision history: {self.decision_hist}")
+        # print(f"Total latency: {self.total_latency}")
+        # print(f"Completed count: {self.completed_cnt}")
+        # print(f"Action request mapping: {self.request_actions}")
 
     # ------------------------------------------------------------
     # Gym API
@@ -319,7 +319,7 @@ class RealServerCluster(gym.Env):
                 reward = 1.0 / (1.0 + latency)
                 if latency > 60.0:
                     reward -= 2  # match penalty logic
-                self.training_data.append((req_type, action, reward))
+                self.training_data.append((req_type, int(action), reward))
             drained.append(latency)
             # bookkeeping
             self.latency_hist.append(latency)
