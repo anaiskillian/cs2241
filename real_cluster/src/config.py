@@ -3,7 +3,12 @@
 Configuration settings for the request routing system.
 """
 
-HOST_IPS = ["13.59.230.137", "18.191.248.228", "18.191.169.241", "3.19.59.13"]
+HOST_IPS = [
+    "18.225.36.33",
+    "3.142.222.97",
+    "3.133.83.137",
+    "3.145.196.252",
+]
 
 HOSTS = [
     f"ec2-{ip.replace(".", "-")}.us-east-2.compute.amazonaws.com" for ip in HOST_IPS
@@ -24,6 +29,8 @@ ENV_CONFIG = {
     "time_step": 0.1,
     "max_steps": 1000,
 }
+
+EXCEPTION_PENALTY = 600  # seconds
 
 # Server configurations (heterogeneous cluster)
 # SERVER_CONFIGS = [

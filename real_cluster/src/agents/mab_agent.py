@@ -20,11 +20,11 @@ class MultiArmedBanditAgent(BaseAgent):
         self,
         num_servers,
         strategy=BanditStrategy.EPSILON_GREEDY,
-        epsilon=0.1,
-        alpha=0.1,
+        epsilon=0.2,
+        alpha=0.15,
         ucb_c=2.0,
         num_request_types=len(QueryType),
-        **kwargs
+        **kwargs,
     ):
         """
         Initialize the Multi-Armed Bandit agent.
@@ -110,6 +110,8 @@ class MultiArmedBanditAgent(BaseAgent):
             else:
                 bonus = self.ucb_c * np.sqrt(np.log(total_count + 1) / counts[i])
                 ucb_values[i] = self.q_values[request_type, i] + bonus
+
+        # print(f"UCB values for request type {request_type}: {ucb_values}")
 
         max_ucb = np.max(ucb_values)
         return np.random.choice(np.flatnonzero(ucb_values == max_ucb))

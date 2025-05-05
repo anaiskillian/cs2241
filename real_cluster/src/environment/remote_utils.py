@@ -9,7 +9,7 @@ import time
 from typing import Tuple
 
 import asyncpg
-
+from ..config import EXCEPTION_PENALTY
 
 async def send_query_to_host(
     pool: asyncpg.pool.Pool,
@@ -30,7 +30,7 @@ async def send_query_to_host(
 
     except Exception as exc:
         print(f"[WARN] {request_id}: query failed - {exc}")
-        latency = 600.0  # 600 s penalty
+        latency = EXCEPTION_PENALTY  # 600 s penalty
     finally:
         # print(f"[INFO] {request_id}: query done - {latency:.2f} s")
         # Queue is *thread-safe* for asyncio tasks in the same loop.
