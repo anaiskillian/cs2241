@@ -38,6 +38,7 @@ from gym import spaces
 
 from .request import QueryType, Request
 from .remote_utils import send_query_to_host
+from ..config import EXCEPTION_PENALTY
 
 # from ..remote_utils import send_query_to_host
 
@@ -247,7 +248,7 @@ class RealServerCluster(gym.Env):
         # 4. Harvest any completed latencies since last step
         latencies_this_step = self._drain_latency_queue()
         # count the number of latencies that were above 1 minute
-        cnt = sum(1 for latency in latencies_this_step if latency > 60.0)
+        cnt = sum(1 for latency in latencies_this_step if latency > EXCEPTION_PENALTY)
 
         # 5. Dummy-update util numbers (replace with real data feed later)
         self._jitter_utils()

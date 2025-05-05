@@ -30,6 +30,8 @@ ENV_CONFIG = {
     "max_steps": 1000,
 }
 
+EXCEPTION_PENALTY = 600  # seconds
+
 # Server configurations (heterogeneous cluster)
 # SERVER_CONFIGS = [
 #     # Server 1: Balanced
