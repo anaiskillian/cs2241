@@ -38,6 +38,7 @@ class MultiArmedBanditAgent(BaseAgent):
             num_request_types: Number of different request types
         """
         super(MultiArmedBanditAgent, self).__init__(num_servers, **kwargs)
+        self.trainable = True
 
         self.strategy = strategy
         self.epsilon = epsilon
@@ -99,17 +100,19 @@ class MultiArmedBanditAgent(BaseAgent):
 
     def _ucb(self, request_type):
         """Upper Confidence Bound action selection."""
-        # Total number of actions for this request type
-        total_count = np.sum(self.action_counts[request_type]) + 1
+        total_count = np.sum(self.action_counts[request_type])
+        counts = self.action_counts[request_type]
 
-        # Avoid division by zero by adding 1
-        counts = self.action_counts[request_type] + 1
+        ucb_values = np.zeros_like(self.q_values[request_type])
+        for i in range(self.num_servers):
+            if counts[i] == 0:
+                ucb_values[i] = float("inf")  # Force exploration
+            else:
+                bonus = self.ucb_c * np.sqrt(np.log(total_count + 1) / counts[i])
+                ucb_values[i] = self.q_values[request_type, i] + bonus
 
-        # UCB formula: Q(a) + c * sqrt(log(total_count) / count(a))
-        exploration = self.ucb_c * np.sqrt(np.log(total_count) / counts)
-        ucb_values = self.q_values[request_type] + exploration
-
-        return np.argmax(ucb_values)
+        max_ucb = np.max(ucb_values)
+        return np.random.choice(np.flatnonzero(ucb_values == max_ucb))
 
     def _thompson_sampling(self, request_type):
         """Thompson Sampling action selection."""

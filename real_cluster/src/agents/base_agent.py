@@ -15,6 +15,7 @@ class BaseAgent:
             **kwargs: Additional agent-specific parameters
         """
         self.num_servers = num_servers
+        self.trainable = False
 
     def select_action(self, observation):
         """

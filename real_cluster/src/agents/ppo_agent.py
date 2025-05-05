@@ -96,6 +96,7 @@ class PPOAgent(BaseAgent):
         **kwargs
     ):
         super(PPOAgent, self).__init__(num_servers, **kwargs)
+        self.trainable = True
 
         self.device = device
         self.gamma = gamma
