@@ -76,7 +76,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--test_steps", type=int, default=10000, help="# steps for final test episode"
     )
-    parser.add_argument("--seed", type=int, default=int(time.time()), help="RNG seed")
+    parser.add_argument("--seed", type=int, default=80, help="RNG seed")
     parser.add_argument(
         "--history",
         type=int,
@@ -162,8 +162,8 @@ def create_environment(args: argparse.Namespace) -> RealServerCluster:
 # ╚══════════════════════════════════════════════════════════════════════════╝
 def create_agents(env: RealServerCluster, args: argparse.Namespace):
     agents = {
-        "Random": RandomAgent(num_servers=env.num_hosts),
-        "Round Robin": RoundRobinAgent(num_servers=env.num_hosts),
+        # "Random": RandomAgent(num_servers=env.num_hosts),
+        # "Round Robin": RoundRobinAgent(num_servers=env.num_hosts),
         # "Least Loaded": LeastLoadedAgent(num_servers=env.num_hosts),
     }
 
@@ -184,16 +184,18 @@ def create_agents(env: RealServerCluster, args: argparse.Namespace):
     elif args.mab_strategy == "thompson":
         _mab("MAB (Thompson)", BanditStrategy.THOMPSON_SAMPLING, MAB_CONFIG["thompson"])
     elif args.mab_strategy == "all":
+        _mab("MAB (UCB)", BanditStrategy.UCB, MAB_CONFIG["ucb"])
         _mab(
             "MAB (ϵ-Greedy)",
             BanditStrategy.EPSILON_GREEDY,
             MAB_CONFIG["epsilon_greedy"],
         )
-        _mab("MAB (UCB)", BanditStrategy.UCB, MAB_CONFIG["ucb"])
         _mab("MAB (Thompson)", BanditStrategy.THOMPSON_SAMPLING, MAB_CONFIG["thompson"])
     else:  # pragma: no cover
         raise ValueError(f"Unknown strategy {args.mab_strategy}")
 
+    agents["Random"] = RandomAgent(num_servers=env.num_hosts)
+    agents["Round Robin"] = RoundRobinAgent(num_servers=env.num_hosts)
     return agents
 
 

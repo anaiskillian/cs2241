@@ -318,7 +318,7 @@ class RealServerCluster(gym.Env):
             if req_id in self.request_actions:
                 action, req_type = self.request_actions.pop(req_id)
                 reward = 1.0 / (1.0 + latency)
-                if latency > 60.0:
+                if latency > EXCEPTION_PENALTY:
                     reward -= 2  # match penalty logic
                 self.training_data.append((req_type, int(action), reward))
             drained.append(latency)
