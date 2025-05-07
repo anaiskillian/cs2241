@@ -66,11 +66,13 @@ class ServerCluster(gym.Env):
         
         # Observation space includes:
         # - Server utilization (quantized 1-10) for each server
+        # - Server states including RAM utilization
         # - Last k latency values
         # - Last k decisions
         # - Request type (one-hot encoded for 5 types)
         self.observation_space = spaces.Dict({
             'server_utils': spaces.Box(low=1, high=10, shape=(self.num_servers,), dtype=np.int32),
+            'server_states': spaces.Box(low=0, high=1, shape=(self.num_servers, 4), dtype=np.float32),
             'latency_history': spaces.Box(low=0, high=float('inf'), shape=(history_length,), dtype=np.float32),
             'decision_history': spaces.Box(low=0, high=self.num_servers-1, shape=(history_length,), dtype=np.int32),
             'request_type': spaces.Box(low=0, high=1, shape=(len(RequestType),), dtype=np.int32)
@@ -227,6 +229,17 @@ class ServerCluster(gym.Env):
         # Get server utilizations
         server_utils = np.array([server.quantized_cpu_util() for server in self.servers])
         
+        # Get server states including RAM utilization
+        server_states = []
+        for server in self.servers:
+            state = server.get_state()
+            server_states.append({
+                'cpu_utilization': state['cpu_utilization'],
+                'ram_utilization': state['ram_utilization'],
+                'active_requests': state['active_requests'],
+                'request_type_distribution': state['request_type_distribution']
+            })
+        
         # Get current request type (if any)
         request_type_onehot = np.zeros(len(RequestType))
         if self.pending_requests:
@@ -235,6 +248,7 @@ class ServerCluster(gym.Env):
         
         return {
             'server_utils': server_utils,
+            'server_states': server_states,
             'latency_history': np.array(self.latency_history),
             'decision_history': np.array(self.decision_history),
             'request_type': request_type_onehot

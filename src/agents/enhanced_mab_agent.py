@@ -1,26 +1,26 @@
-# src/agents/mab_agent.py
+# src/agents/enhanced_mab_agent.py
 import numpy as np
 from enum import Enum, auto
 from .base_agent import BaseAgent
-from .least_loaded import LeastLoadedAgent
 from ..environment.request import RequestType
 
-class BanditStrategy(Enum):
-    """Enum for different multi-armed bandit strategies."""
+class EnhancedBanditStrategy(Enum):
+    """Enum for different enhanced multi-armed bandit strategies."""
     EPSILON_GREEDY = auto()
     UCB = auto()
     THOMPSON_SAMPLING = auto()
 
-class MultiArmedBanditAgent(BaseAgent):
+class EnhancedMultiArmedBanditAgent(BaseAgent):
     """
-    Multi-Armed Bandit agent for request routing.
+    Enhanced Multi-Armed Bandit agent for request routing.
     Learns to route requests based on observed rewards and server resource utilization.
+    Considers both CPU and RAM utilization in decision making.
     """
     
     def __init__(
         self,
         num_servers,
-        strategy=BanditStrategy.EPSILON_GREEDY,
+        strategy=EnhancedBanditStrategy.EPSILON_GREEDY,
         epsilon=0.1,
         alpha=0.1,
         ucb_c=2.0,
@@ -29,18 +29,18 @@ class MultiArmedBanditAgent(BaseAgent):
         **kwargs
     ):
         """
-        Initialize the Multi-Armed Bandit agent.
+        Initialize the Enhanced Multi-Armed Bandit agent.
         
         Args:
             num_servers: Number of servers to route requests to
-            strategy: BanditStrategy to use
+            strategy: EnhancedBanditStrategy to use
             epsilon: Exploration rate for epsilon-greedy
             alpha: Learning rate
             ucb_c: Exploration coefficient for UCB
             throughput_weight: Weight given to throughput vs latency (0-1)
             num_request_types: Number of different request types
         """
-        super(MultiArmedBanditAgent, self).__init__(num_servers, **kwargs)
+        super(EnhancedMultiArmedBanditAgent, self).__init__(num_servers, **kwargs)
         
         self.strategy = strategy
         self.epsilon = epsilon
@@ -73,21 +73,18 @@ class MultiArmedBanditAgent(BaseAgent):
         # Processing time estimates per request type and server
         self.processing_times = np.ones((num_request_types, num_servers))
         
-        # Create Least Loaded agent for comparison
-        self.ll_agent = LeastLoadedAgent(num_servers)
-        
-        # Track mismatch statistics
-        self.total_steps = 0
-        self.mismatch_count = 0
-        self.mismatch_history = []
-        
         # RAM utilization tracking
         self.ram_utilization_history = np.zeros((num_servers, 10))  # Track last 10 steps
         self.ram_utilization_idx = 0
+        
+        # Resource utilization weights
+        self.cpu_weight = 0.6  # Weight for CPU utilization
+        self.ram_weight = 0.4  # Weight for RAM utilization
     
     def select_action(self, observation):
         """
         Select a server using the configured bandit strategy.
+        Considers both CPU and RAM utilization in decision making.
         
         Args:
             observation: Environment observation
@@ -117,19 +114,12 @@ class MultiArmedBanditAgent(BaseAgent):
         
         self.last_request_type = request_type
         
-        # Get Least Loaded's action for comparison
-        ll_action = self.ll_agent.select_action(observation)
-        
         # Factor in server utilization and capacity when making decisions
         # We create a modified Q-value that favors less utilized servers with higher capacity
         modified_q_values = self.q_values[request_type].copy()
         
         # Get RAM requirement for this request type
-        try:
-            ram_requirement = RequestType(request_type + 1).ram_requirement
-        except (ValueError, AttributeError):
-            # Default RAM requirement if request type is unknown
-            ram_requirement = 0.1
+        ram_requirement = RequestType.get_ram_requirement(RequestType(request_type + 1))
         
         # Adjust for server utilization (penalize highly utilized servers)
         for i in range(self.num_servers):
@@ -152,33 +142,34 @@ class MultiArmedBanditAgent(BaseAgent):
                 modified_q_values[i] *= (1 - self.throughput_weight)  # Latency component
                 modified_q_values[i] += self.throughput_weight * throughput_potential  # Throughput component
             
-            # Penalize servers that are at high utilization
+            # Calculate combined resource utilization score
+            resource_score = (
+                self.cpu_weight * (1 - cpu_util_factor) +
+                self.ram_weight * (1 - avg_ram_utils[i])
+            )
+            
+            # Apply resource utilization penalties
             if cpu_util_factor > 0.9:  # Server is near CPU capacity
                 modified_q_values[i] *= 0.5  # Significant penalty
                 
-            # Penalize servers that don't have enough RAM
             if not ram_sufficient:
                 modified_q_values[i] *= 0.3  # Even larger penalty for insufficient RAM
                 
-            # Additional penalty for high RAM utilization
             if avg_ram_utils[i] > 0.9:  # Server is near RAM capacity
                 modified_q_values[i] *= 0.7  # Moderate penalty
+            
+            # Apply resource score to Q-value
+            modified_q_values[i] *= resource_score
         
         # Select action based on strategy using the modified Q-values
-        if self.strategy == BanditStrategy.EPSILON_GREEDY:
+        if self.strategy == EnhancedBanditStrategy.EPSILON_GREEDY:
             action = self._epsilon_greedy(request_type, modified_q_values)
-        elif self.strategy == BanditStrategy.UCB:
+        elif self.strategy == EnhancedBanditStrategy.UCB:
             action = self._ucb(request_type, modified_q_values)
-        elif self.strategy == BanditStrategy.THOMPSON_SAMPLING:
+        elif self.strategy == EnhancedBanditStrategy.THOMPSON_SAMPLING:
             action = self._thompson_sampling(request_type, modified_q_values)
         else:
             action = np.random.randint(0, self.num_servers)
-        
-        # Track mismatch with Least Loaded
-        self.total_steps += 1
-        if action != ll_action:
-            self.mismatch_count += 1
-        self.mismatch_history.append(self.mismatch_count / self.total_steps)
         
         self.last_action = action
         return action
@@ -303,14 +294,6 @@ class MultiArmedBanditAgent(BaseAgent):
         else:
             self.failure_counts[request_type, server] += abs(reward)
     
-    def get_mismatch_rate(self):
-        """Get the current mismatch rate with Least Loaded agent."""
-        return self.mismatch_count / self.total_steps if self.total_steps > 0 else 0
-    
-    def get_mismatch_history(self):
-        """Get the history of mismatch rates over time."""
-        return self.mismatch_history
-    
     def reset(self):
         """Reset the agent's state for a new episode."""
         # Keep Q-values and counts as they are learned across episodes
@@ -321,12 +304,6 @@ class MultiArmedBanditAgent(BaseAgent):
         self.server_completions = np.zeros(self.num_servers)
         self.server_processing_times = np.zeros(self.num_servers) + 1e-6
         
-        # Reset mismatch tracking
-        self.total_steps = 0
-        self.mismatch_count = 0
-        self.mismatch_history = []
-        
         # Reset RAM utilization history
         self.ram_utilization_history = np.zeros((self.num_servers, 10))
-        self.ram_utilization_idx = 0
-
+        self.ram_utilization_idx = 0 

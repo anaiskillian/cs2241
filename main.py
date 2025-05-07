@@ -6,6 +6,7 @@ import time
 import json
 import numpy as np
 import matplotlib.pyplot as plt
+from datetime import datetime
 
 from src.environment.cluster import ServerCluster
 from src.environment.request import RequestType
@@ -13,6 +14,7 @@ from src.agents.round_robin import RoundRobinAgent
 from src.agents.random_agent import RandomAgent
 from src.agents.least_loaded import LeastLoadedAgent
 from src.agents.mab_agent import MultiArmedBanditAgent, BanditStrategy
+from src.agents.enhanced_mab_agent import EnhancedMultiArmedBanditAgent, EnhancedBanditStrategy
 from src.agents.ppo_agent import PPOAgent
 from src.utils.metrics import PerformanceMetrics
 from src.utils.workload_gen import WorkloadGenerator
@@ -145,6 +147,20 @@ def create_agents(env, args):
             **PPO_CONFIG
         )
     
+    # Add Enhanced MAB agents
+    agents["Enhanced MAB (Epsilon-Greedy)"] = EnhancedMultiArmedBanditAgent(
+        num_servers=env.num_servers,
+        strategy=EnhancedBanditStrategy.EPSILON_GREEDY
+    )
+    agents["Enhanced MAB (UCB)"] = EnhancedMultiArmedBanditAgent(
+        num_servers=env.num_servers,
+        strategy=EnhancedBanditStrategy.UCB
+    )
+    agents["Enhanced MAB (Thompson)"] = EnhancedMultiArmedBanditAgent(
+        num_servers=env.num_servers,
+        strategy=EnhancedBanditStrategy.THOMPSON_SAMPLING
+    )
+    
     return agents
 
 def run_episode(env, agent, max_steps=1000, render=False):
@@ -181,8 +197,7 @@ def baseline_experiment(env, agents, args):
     print("Running baseline comparison experiment...")
     
     # Create timestamped directory for this run
-    import datetime
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     results_dir = f"results/baseline_{timestamp}"
     os.makedirs(results_dir, exist_ok=True)
 
@@ -190,6 +205,7 @@ def baseline_experiment(env, agents, args):
     
     all_metrics = {}
     comparative_metrics = {}
+    mismatch_rates = {}
     
     for agent_name, agent in agents.items():
         print(f"Testing {agent_name} agent...")
@@ -206,6 +222,12 @@ def baseline_experiment(env, agents, args):
             agent_metrics.success_rates.extend(episode_metrics.success_rates)
             agent_metrics.server_utilizations.extend(episode_metrics.server_utilizations)
             agent_metrics.step_info.extend(episode_metrics.step_info)
+            
+            # Track mismatch rates for MAB agents
+            if "MAB" in agent_name and hasattr(agent, "get_mismatch_rate"):
+                if agent_name not in mismatch_rates:
+                    mismatch_rates[agent_name] = []
+                mismatch_rates[agent_name].append(agent.get_mismatch_rate())
         
         avg_metrics = agent_metrics.get_average_metrics()
         fairness = agent_metrics.get_fairness_index()
@@ -215,6 +237,8 @@ def baseline_experiment(env, agents, args):
         print(f"  Avg Throughput: {avg_metrics['avg_throughput']:.4f}")
         print(f"  Success Rate: {avg_metrics['avg_success_rate']*100:.2f}%")
         print(f"  Fairness Index: {fairness:.4f}")
+        if "MAB" in agent_name and hasattr(agent, "get_mismatch_rate"):
+            print(f"  Final Mismatch Rate: {agent.get_mismatch_rate():.4f}")
         print("")
         
         all_metrics[agent_name] = agent_metrics
@@ -232,6 +256,19 @@ def baseline_experiment(env, agents, args):
     plot_throughput_comparison(throughput_comparison)
     plot_comparative_metrics(comparative_metrics)
     
+    # Plot mismatch rates if we have any
+    if mismatch_rates:
+        plt.figure(figsize=(10, 6))
+        for agent_name, rates in mismatch_rates.items():
+            plt.plot(rates, label=agent_name)
+        plt.xlabel("Episode")
+        plt.ylabel("Mismatch Rate with Least Loaded")
+        plt.title("MAB vs Least Loaded Mismatch Rates")
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        plt.savefig(f"{results_dir}/mismatch_rates.png")
+        plt.close()
+    
     # Save results to JSON
     results = {
         name: {
@@ -240,6 +277,12 @@ def baseline_experiment(env, agents, args):
         }
         for name, metrics in all_metrics.items()
     }
+    
+    # Add mismatch rates to results
+    for agent_name, rates in mismatch_rates.items():
+        if agent_name in results:
+            results[agent_name]["mismatch_rates"] = rates
+            results[agent_name]["final_mismatch_rate"] = rates[-1] if rates else 0
     
     with open(f"{results_dir}/results.json", "w") as f:
         json.dump(results, f, indent=2)
@@ -254,8 +297,7 @@ def workload_experiment(env, agents, args):
     print(f"Running workload analysis experiment...")
     
     # Create timestamped directory for this run
-    import datetime
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     results_dir = f"results/workload_{timestamp}"
     os.makedirs(results_dir, exist_ok=True)
 
@@ -353,14 +395,12 @@ def workload_experiment(env, agents, args):
     
     print(f"Workload analysis complete. Results saved to '{results_dir}/' directory.")
 
-
 def hyperparameter_experiment(env, args):
     """Run hyperparameter tuning experiment."""
     print("Running hyperparameter tuning experiment...")
     
     # Create timestamped directory for this run
-    import datetime
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     results_dir = f"results/hyperparameter_{timestamp}"
     os.makedirs(results_dir, exist_ok=True)
     
@@ -477,8 +517,7 @@ def ppo_experiment(env, agents, args):
     print("Running PPO comparison experiment...")
     
     # Create timestamped directory for this run
-    import datetime
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     results_dir = f"results/ppo_{timestamp}"
     os.makedirs(results_dir, exist_ok=True)
     
@@ -720,8 +759,6 @@ def main():
         ppo_experiment(env, agents, args)
     else:
         print(f"Unknown experiment type: {args.experiment}")
-
-
 
 if __name__ == "__main__":
     main()

@@ -1,0 +1,87 @@
+{
+  "Round Robin": {
+    "avg_metrics": {
+      "avg_latency": 1.9702245966788168,
+      "avg_throughput": 8.502578438440649,
+      "avg_success_rate": 0.9391913239612988,
+      "avg_server_util": 0.5519845833333333,
+      "std_latency": 0.2609761399288892,
+      "tail_latency_95": 2.099888641425362
+    },
+    "fairness": 0.8745217473521636
+  },
+  "Random": {
+    "avg_metrics": {
+      "avg_latency": 1.9564963148555878,
+      "avg_throughput": 8.29935734717796,
+      "avg_success_rate": 0.9173876674653663,
+      "avg_server_util": 0.5254091666666667,
+      "std_latency": 0.24938979521447,
+      "tail_latency_95": 2.083563098323393
+    },
+    "fairness": 0.8980299937594437
+  },
+  "Least Loaded": {
+    "avg_metrics": {
+      "avg_latency": 1.9098453303956393,
+      "avg_throughput": 9.087581232382925,
+      "avg_success_rate": 1.0,
+      "avg_server_util": 0.5232483333333333,
+      "std_latency": 0.24899676436089535,
+      "tail_latency_95": 2.0068041999408557
+    },
+    "fairness": 0.9957653053679462
+  },
+  "MAB (UCB)": {
+    "avg_metrics": {
+      "avg_latency": 1.8951407810044596,
+      "avg_throughput": 9.088949787534297,
+      "avg_success_rate": 1.0,
+      "avg_server_util": 0.5280516666666667,
+      "std_latency": 0.23642925191479702,
+      "tail_latency_95": 1.9830985915493
+    },
+    "fairness": 0.9799009513186924,
+    "mismatch_rates": [
+      0.348,
+      0.252,
+      0.266,
+      0.251,
+      0.242
+    ],
+    "final_mismatch_rate": 0.242
+  },
+  "Enhanced MAB (Epsilon-Greedy)": {
+    "avg_metrics": {
+      "avg_latency": 1.8820629204257326,
+      "avg_throughput": 9.103854040754822,
+      "avg_success_rate": 0.9996539435469498,
+      "avg_server_util": 0.5180870833333333,
+      "std_latency": 0.24711497922289766,
+      "tail_latency_95": 2.014285714285726
+    },
+    "fairness": 0.9960256418856823
+  },
+  "Enhanced MAB (UCB)": {
+    "avg_metrics": {
+      "avg_latency": 1.9114107639659017,
+      "avg_throughput": 9.06306279808242,
+      "avg_success_rate": 0.9973633805098312,
+      "avg_server_util": 0.5482954166666667,
+      "std_latency": 0.25188492893045084,
+      "tail_latency_95": 2.017172256179709
+    },
+    "fairness": 0.9550226363991021
+  },
+  "Enhanced MAB (Thompson)": {
+    "avg_metrics": {
+      "avg_latency": 1.8297267186126167,
+      "avg_throughput": 9.119800064183,
+      "avg_success_rate": 0.9993202655067169,
+      "avg_server_util": 0.5006183333333333,
+      "std_latency": 0.22700208870675323,
+      "tail_latency_95": 1.966054906872457
+    },
+    "fairness": 0.9986635603585375
+  }
+}
