@@ -192,6 +192,20 @@ def run_episode(env, agent, max_steps=1000, render=False):
     
     return metrics
 
+def convert_numpy_types(obj):
+    """Convert NumPy types to Python native types for JSON serialization."""
+    if isinstance(obj, np.integer):
+        return int(obj)
+    elif isinstance(obj, np.floating):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, dict):
+        return {key: convert_numpy_types(value) for key, value in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_numpy_types(item) for item in obj]
+    return obj
+
 def baseline_experiment(env, agents, args):
     """Run baseline comparison of all agents."""
     print("Running baseline comparison experiment...")
@@ -206,6 +220,7 @@ def baseline_experiment(env, agents, args):
     all_metrics = {}
     comparative_metrics = {}
     mismatch_rates = {}
+    step_comparisons = {}  # Store step-by-step comparisons
     
     for agent_name, agent in agents.items():
         print(f"Testing {agent_name} agent...")
@@ -221,13 +236,45 @@ def baseline_experiment(env, agents, args):
             agent_metrics.throughputs.extend(episode_metrics.throughputs)
             agent_metrics.success_rates.extend(episode_metrics.success_rates)
             agent_metrics.server_utilizations.extend(episode_metrics.server_utilizations)
-            agent_metrics.step_info.extend(episode_metrics.step_info)
             
-            # Track mismatch rates for MAB agents
+            # Track mismatch rates and step comparisons for MAB agents
             if "MAB" in agent_name and hasattr(agent, "get_mismatch_rate"):
                 if agent_name not in mismatch_rates:
                     mismatch_rates[agent_name] = []
+                    step_comparisons[agent_name] = {
+                        'steps': [],
+                        'mab_actions': [],
+                        'll_actions': [],
+                        'mismatches': [],
+                        'latencies': []
+                    }
+                
                 mismatch_rates[agent_name].append(agent.get_mismatch_rate())
+                
+                # Get step-by-step comparison data
+                num_steps = len(episode_metrics.latencies)
+                episode_steps = list(range(num_steps))
+                
+                # Get the last action for each step in this episode
+                mab_actions = [agent.last_action] * num_steps
+                ll_actions = agent.ll_agent.get_action_history()[-num_steps:]  # Get only actions from this episode
+                
+                # Ensure all arrays have the same length
+                min_length = min(len(episode_steps), len(mab_actions), len(ll_actions))
+                episode_steps = episode_steps[:min_length]
+                mab_actions = mab_actions[:min_length]
+                ll_actions = ll_actions[:min_length]
+                
+                # Calculate mismatches
+                mismatches = [1 if mab != ll else 0 for mab, ll in zip(mab_actions, ll_actions)]
+                latencies = episode_metrics.latencies[:min_length]
+                
+                # Add to comparison data
+                step_comparisons[agent_name]['steps'].extend(episode_steps)
+                step_comparisons[agent_name]['mab_actions'].extend(mab_actions)
+                step_comparisons[agent_name]['ll_actions'].extend(ll_actions)
+                step_comparisons[agent_name]['mismatches'].extend(mismatches)
+                step_comparisons[agent_name]['latencies'].extend(latencies)
         
         avg_metrics = agent_metrics.get_average_metrics()
         fairness = agent_metrics.get_fairness_index()
@@ -269,6 +316,137 @@ def baseline_experiment(env, agents, args):
         plt.savefig(f"{results_dir}/mismatch_rates.png")
         plt.close()
     
+    # Create step-by-step comparison plots for each MAB agent
+    for agent_name, comparison in step_comparisons.items():
+        # Convert to numpy arrays and ensure all have same length
+        steps = np.array(comparison['steps'])
+        mab_actions = np.array(comparison['mab_actions'])
+        ll_actions = np.array(comparison['ll_actions'])
+        mismatches = np.array(comparison['mismatches'])
+        latencies = np.array(comparison['latencies'])
+        
+        # Verify all arrays have same length
+        min_length = min(len(steps), len(mab_actions), len(ll_actions), 
+                        len(mismatches), len(latencies))
+        steps = steps[:min_length]
+        mab_actions = mab_actions[:min_length]
+        ll_actions = ll_actions[:min_length]
+        mismatches = mismatches[:min_length]
+        latencies = latencies[:min_length]
+        
+        # Create a figure with 3 subplots
+        fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(15, 12), sharex=True)
+        
+        # Plot 1: Actions over time
+        ax1.plot(steps, mab_actions, 'b-', label='MAB Actions', alpha=0.7)
+        ax1.plot(steps, ll_actions, 'r--', label='Least Loaded Actions', alpha=0.7)
+        ax1.set_ylabel('Server Selected')
+        ax1.set_title(f'{agent_name} vs Least Loaded - Step by Step Comparison')
+        ax1.legend()
+        ax1.grid(True, alpha=0.3)
+        
+        # Plot 2: Mismatches over time
+        ax2.plot(steps, mismatches, 'g-', label='Mismatches')
+        ax2.set_ylabel('Mismatch (1) / Match (0)')
+        ax2.legend()
+        ax2.grid(True, alpha=0.3)
+        
+        # Plot 3: Latency over time
+        ax3.plot(steps, latencies, 'k-', label='Latency')
+        ax3.set_xlabel('Step')
+        ax3.set_ylabel('Latency')
+        ax3.legend()
+        ax3.grid(True, alpha=0.3)
+        
+        plt.tight_layout()
+        plt.savefig(f"{results_dir}/{agent_name.replace(' ', '_')}_step_comparison.png")
+        plt.close()
+        
+        # Create a summary statistics plot
+        plt.figure(figsize=(12, 8))
+        
+        # Calculate moving averages
+        window_size = min(100, len(steps))
+        if window_size > 0:
+            # Calculate moving averages for server selections
+            mab_ma = np.convolve(mab_actions, 
+                                np.ones(window_size)/window_size, 
+                                mode='valid')
+            ll_ma = np.convolve(ll_actions, 
+                               np.ones(window_size)/window_size, 
+                               mode='valid')
+            
+            # Calculate mismatch rate moving average
+            mismatches = np.array([1 if mab != ll else 0 for mab, ll in zip(mab_actions, ll_actions)])
+            mismatch_ma = np.convolve(mismatches, 
+                                     np.ones(window_size)/window_size, 
+                                     mode='valid')
+            
+            # Create figure with two y-axes
+            fig, ax1 = plt.subplots(figsize=(12, 8))
+            ax2 = ax1.twinx()
+            
+            # Plot server selection moving averages on primary y-axis
+            line1 = ax1.plot(mab_ma, 'b-', label='MAB Server Selection (MA)', alpha=0.7)
+            line2 = ax1.plot(ll_ma, 'r--', label='Least Loaded Server Selection (MA)', alpha=0.7)
+            
+            # Plot mismatch rate moving average on secondary y-axis
+            ma_steps = np.arange(len(mismatch_ma)) + window_size//2
+            line3 = ax2.plot(ma_steps, mismatch_ma, 'g-', label='Mismatch Rate (MA)', alpha=0.7)
+            
+            # Set labels and title
+            ax1.set_xlabel('Step (Moving Average)')
+            ax1.set_ylabel('Server Index (0 to num_servers-1)', color='b')
+            ax2.set_ylabel('Mismatch Rate (0 to 1)', color='g')
+            
+            # Set y-axis limits
+            ax1.set_ylim(-0.5, env.num_servers - 0.5)  # Server indices
+            ax2.set_ylim(-0.05, 1.05)  # Mismatch rate (0 to 1)
+            
+            # Set y-ticks for server selection to be whole numbers
+            ax1.set_yticks(np.arange(env.num_servers))
+            
+            # Combine legends
+            handles1, labels1 = ax1.get_legend_handles_labels()
+            handles2, labels2 = ax2.get_legend_handles_labels()
+            ax1.legend(handles1 + handles2, labels1 + labels2, loc='upper right')
+            
+            plt.title(f'{agent_name} vs Least Loaded - Moving Average Comparison\n'
+                     f'(Window Size: {window_size} steps)')
+            
+            # Add grid
+            ax1.grid(True, alpha=0.3)
+            
+            # Add explanation text
+            plt.figtext(0.02, 0.02, 
+                       'Note: The plot shows moving averages of server selections and mismatch rate.\n'
+                       'Mismatch rate of 0 means agents always chose the same server, 1 means they always chose different servers.',
+                       fontsize=8, style='italic')
+            
+            plt.tight_layout()
+            plt.savefig(f"{results_dir}/{agent_name.replace(' ', '_')}_moving_average.png")
+            plt.close()
+            
+            # Create separate plot for mismatch rate
+            plt.figure(figsize=(12, 6))
+            plt.plot(ma_steps, mismatch_ma, 'g-', linewidth=2)
+            plt.xlabel('Step (Moving Average)')
+            plt.ylabel('Mismatch Rate (0 to 1)')
+            plt.title(f'{agent_name} vs Least Loaded - Mismatch Rate Over Time\n'
+                     f'(Window Size: {window_size} steps)')
+            plt.grid(True, alpha=0.3)
+            plt.ylim(-0.05, 1.05)
+            
+            # Add explanation text
+            plt.figtext(0.02, 0.02, 
+                       'Note: Mismatch rate shows how often the agents chose different servers.\n'
+                       '0 = always chose the same server, 1 = always chose different servers.',
+                       fontsize=8, style='italic')
+            
+            plt.tight_layout()
+            plt.savefig(f"{results_dir}/{agent_name.replace(' ', '_')}_mismatch_rate.png")
+            plt.close()
+    
     # Save results to JSON
     results = {
         name: {
@@ -278,11 +456,18 @@ def baseline_experiment(env, agents, args):
         for name, metrics in all_metrics.items()
     }
     
-    # Add mismatch rates to results
+    # Add mismatch rates and step comparisons to results
     for agent_name, rates in mismatch_rates.items():
         if agent_name in results:
             results[agent_name]["mismatch_rates"] = rates
             results[agent_name]["final_mismatch_rate"] = rates[-1] if rates else 0
+            results[agent_name]["step_comparison"] = {
+                k: v.tolist() if isinstance(v, np.ndarray) else v 
+                for k, v in step_comparisons[agent_name].items()
+            }
+    
+    # Convert all NumPy types to Python native types before JSON serialization
+    results = convert_numpy_types(results)
     
     with open(f"{results_dir}/results.json", "w") as f:
         json.dump(results, f, indent=2)

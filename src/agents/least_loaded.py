@@ -4,12 +4,19 @@ from .base_agent import BaseAgent
 
 class LeastLoadedAgent(BaseAgent):
     """
-    Improved Least Loaded load balancing agent.
-    Routes requests based on server utilization and estimated server capabilities.
+    Least Loaded agent for request routing.
+    Routes requests to the server with the lowest current utilization.
     """
     
     def __init__(self, num_servers, **kwargs):
+        """
+        Initialize the Least Loaded agent.
+        
+        Args:
+            num_servers: Number of servers to route requests to
+        """
         super(LeastLoadedAgent, self).__init__(num_servers, **kwargs)
+        self.action_history = []
         
         # Define default server speeds if not available directly
         # In a real implementation, these would be passed or learned
@@ -17,7 +24,7 @@ class LeastLoadedAgent(BaseAgent):
         
     def select_action(self, observation):
         """
-        Select the server with the lowest estimated load considering server capabilities.
+        Select the least loaded server.
         
         Args:
             observation: Environment observation
@@ -25,31 +32,20 @@ class LeastLoadedAgent(BaseAgent):
         Returns:
             int: Selected server index
         """
-        # Server utilization is quantized from 1-10
+        # Extract server utilization from observation
         server_utils = observation['server_utils']
         
-        # Get request type (assuming one-hot encoding)
-        request_type_onehot = observation['request_type']
-        request_type_idx = np.argmax(request_type_onehot)
+        # Select server with lowest utilization
+        action = np.argmin(server_utils)
         
-        # Define base processing times for different request types
-        # These would typically come from RequestType.get_processing_time
-        base_processing_times = [0.8, 3.0, 2.5, 1.2, 5.0]  # Values from the code
-        base_time = base_processing_times[request_type_idx]
+        # Track action history
+        self.action_history.append(action)
         
-        # Calculate normalized load considering server speed
-        estimated_times = []
-        for i in range(self.num_servers):
-            # Convert quantized utilization (1-10) back to 0-1 range
-            utilization = (server_utils[i] - 1) / 9.0
-            
-            # Calculate estimated completion time
-            # Small epsilon to avoid division by zero
-            est_time = base_time / (self.server_cpu_speeds[i] * (1.0 - utilization + 1e-6))
-            estimated_times.append(est_time)
-        
-        # Return server with minimum estimated completion time
-        return np.argmin(estimated_times)
+        return action
+    
+    def get_action_history(self):
+        """Get the history of actions taken by the agent."""
+        return self.action_history
     
     def update(self, observation, action, reward, next_observation, done):
         """
@@ -65,5 +61,5 @@ class LeastLoadedAgent(BaseAgent):
         pass  # No need to update anything
     
     def reset(self):
-        """Reset agent state."""
-        pass  # Nothing to reset
+        """Reset the agent's state for a new episode."""
+        self.action_history = []
